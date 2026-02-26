@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/mlb-proxy/:path*",
+      "destination": "https://statsapi.mlb.com/api/v1/:path*"
+    },
+    {
+      "source": "/savant/:path*",
+      "destination": "https://baseballsavant.mlb.com/:path*"
+    },
+    {
+      "source": "/((?!api|assets|mlb-proxy|savant).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
