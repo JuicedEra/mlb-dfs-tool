@@ -138,7 +138,7 @@ export default function PitcherIntel({ isPremium = false, onUpgrade }) {
               </span>
               <span className="badge badge-red">{hot.length} pitchers</span>
             </div>
-            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", width: "100%" }}>
+            <div className="table-scroll-inner">
               <table style={{ minWidth: 420, width: "100%" }}>
                 <thead><tr><th>Pitcher</th><th>Team</th><th>H Last 2</th><th>AVG Against</th><th>HR</th></tr></thead>
                 <tbody>
@@ -173,7 +173,7 @@ export default function PitcherIntel({ isPremium = false, onUpgrade }) {
               </span>
               <span className="badge badge-blue">{cold.length} pitchers</span>
             </div>
-            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", width: "100%" }}>
+            <div className="table-scroll-inner">
               <table style={{ minWidth: 420, width: "100%" }}>
                 <thead><tr><th>Pitcher</th><th>Team</th><th>H Last 2</th><th>AVG Against</th><th>K/9</th></tr></thead>
                 <tbody>
