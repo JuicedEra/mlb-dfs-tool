@@ -1369,7 +1369,7 @@ function AppFooter() {
           {[
             { label: "Privacy", action: () => setShowPrivacy(true) },
             { label: "Terms", action: () => setShowTerms(true) },
-            { label: "Contact", action: () => window.open(`mailto:${CONTACT_EMAIL}`) },
+            { label: "Contact", action: () => (() => { const a = document.createElement('a'); a.href = `mailto:${CONTACT_EMAIL}`; a.click(); })() },
           ].map(l => (
             <button key={l.label} onClick={l.action}
               style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: 0 }}>
@@ -1410,7 +1410,7 @@ function LandingFooter() {
           {[
             { label: "Privacy Policy", action: () => setShowPrivacy(true) },
             { label: "Terms of Service", action: () => setShowTerms(true) },
-            { label: "Contact Us", action: () => window.open(`mailto:${CONTACT_EMAIL}`) },
+            { label: "Contact Us", action: () => (() => { const a = document.createElement('a'); a.href = `mailto:${CONTACT_EMAIL}`; a.click(); })() },
           ].map(l => (
             <button key={l.label} onClick={l.action}
               style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", fontSize: 11, cursor: "pointer", padding: 0, transition: "color 0.15s" }}
