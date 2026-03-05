@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-  const { userId, email, priceId, plan } = req.body;
+  const { userId, email, priceId, plan, withTrial } = req.body;
 
   if (!priceId) return res.status(400).json({ error: "priceId required" });
   if (!process.env.STRIPE_SECRET_KEY) return res.status(500).json({ error: "Stripe not configured" });
@@ -25,6 +25,8 @@ export default async function handler(req, res) {
       allow_promotion_codes: true,
       subscription_data: {
         metadata: { userId: userId || "" },
+        // Add 7-day trial if eligible (backend trusts this; trial_used is double-checked in webhook)
+        ...(withTrial ? { trial_period_days: 7 } : {}),
       },
     };
 
@@ -32,7 +34,9 @@ export default async function handler(req, res) {
     if (plan === "monthly" && process.env.VITE_STRIPE_PRICE_ID_ANNUAL) {
       sessionParams.custom_text = {
         submit: {
-          message: "💡 Switch to annual and save $61/year — cancel anytime."
+          message: withTrial
+            ? "🎁 Your 7-day free trial starts today — no charge until it ends."
+            : "💡 Switch to annual and save $61/year — cancel anytime."
         }
       };
     }
