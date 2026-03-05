@@ -125,14 +125,11 @@ export default function App() {
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
-  function handleUpgrade(plan = "monthly") {
+  function handleUpgrade(plan = null) {
     if (!user && HAS_AUTH) { setAuthMode("signup"); setShowAuth(true); return; }
-    if (HAS_STRIPE && user) {
-      redirectToCheckout(user.id, user.email, plan);
-    } else {
-      // Show modal regardless — either Stripe not configured or no user
-      setShowUpgrade(true);
-    }
+    // Always show the upgrade modal so user can pick monthly vs annual
+    // The modal itself calls redirectToCheckout with the chosen plan
+    setShowUpgrade(true);
   }
 
   function handleNavClick(id) {
@@ -1369,7 +1366,7 @@ function AppFooter() {
           {[
             { label: "Privacy", action: () => setShowPrivacy(true) },
             { label: "Terms", action: () => setShowTerms(true) },
-            { label: "Contact", action: () => (() => { const a = document.createElement('a'); a.href = `mailto:${CONTACT_EMAIL}`; a.click(); })() },
+            { label: "Contact", action: () => window.location.href = `mailto:${CONTACT_EMAIL}` },
           ].map(l => (
             <button key={l.label} onClick={l.action}
               style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: 0 }}>
@@ -1410,7 +1407,7 @@ function LandingFooter() {
           {[
             { label: "Privacy Policy", action: () => setShowPrivacy(true) },
             { label: "Terms of Service", action: () => setShowTerms(true) },
-            { label: "Contact Us", action: () => (() => { const a = document.createElement('a'); a.href = `mailto:${CONTACT_EMAIL}`; a.click(); })() },
+            { label: "Contact Us", action: () => window.location.href = `mailto:${CONTACT_EMAIL}` },
           ].map(l => (
             <button key={l.label} onClick={l.action}
               style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", fontSize: 11, cursor: "pointer", padding: 0, transition: "color 0.15s" }}
