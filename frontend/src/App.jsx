@@ -1126,9 +1126,27 @@ function AccountSettings({ isPremium, onUpgrade }) {
       return;
     }
     setPortalLoading(true);
-    const { openBillingPortal } = await import("./utils/stripe");
-    const { error } = await openBillingPortal(customerId);
-    if (error) window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Could not open billing portal: " + error, type: "error" } }));
+    // Open a blank window synchronously (before async) so popup blocker doesn't block it
+    const win = window.open("", "_blank");
+    if (win) win.document.write("<p style='font-family:sans-serif;padding:40px;color:#555'>Opening billing portal...</p>");
+    try {
+      const res = await fetch("/api/create-portal-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stripeCustomerId: customerId }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        if (win) win.location.href = data.url;
+        else window.location.href = data.url;
+      } else {
+        if (win) win.close();
+        window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Could not open billing portal: " + (data.error || "Unknown error"), type: "error" } }));
+      }
+    } catch (err) {
+      if (win) win.close();
+      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Could not open billing portal.", type: "error" } }));
+    }
     setPortalLoading(false);
   }
 
