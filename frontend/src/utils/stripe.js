@@ -1,51 +1,67 @@
-// ── Stripe Checkout ───────────────────────────────────────────────────────
-// Add to .env:
-//   VITE_STRIPE_PUBLISHABLE_KEY=pk_live_...  (or pk_test_...)
-//   VITE_STRIPE_PRICE_ID=price_...           (your PRO monthly price)
-//
-// Stripe setup checklist:
-//   1. Create product "DiamondIQ PRO" in Stripe dashboard
-//   2. Add a recurring price (e.g. $9.99/mo)
-//   3. Copy the price ID to .env
-//   4. Deploy the webhook handler (see /api/stripe-webhook.js)
-//   5. Set webhook secret in Vercel env vars
+// ── Stripe Utilities ──────────────────────────────────────────────────────
+// Env vars needed (Vercel + local .env):
+//   VITE_STRIPE_PUBLISHABLE_KEY=pk_test_...
+//   VITE_STRIPE_PRICE_ID_MONTHLY=price_...
+//   VITE_STRIPE_PRICE_ID_ANNUAL=price_...
 
-import { loadStripe } from "@stripe/stripe-js";
+const PRICE_MONTHLY = import.meta.env.VITE_STRIPE_PRICE_ID_MONTHLY || "";
+const PRICE_ANNUAL  = import.meta.env.VITE_STRIPE_PRICE_ID_ANNUAL  || "";
 
-const STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
-const PRICE_ID   = import.meta.env.VITE_STRIPE_PRICE_ID || "";
+export const HAS_STRIPE = !!(PRICE_MONTHLY);
 
-export const HAS_STRIPE = !!(STRIPE_KEY && PRICE_ID);
+export const PRICES = {
+  monthly: { id: PRICE_MONTHLY, amount: "$14.99", label: "per month", savings: null },
+  annual:  { id: PRICE_ANNUAL,  amount: "$119",   label: "per year",  savings: "Save $61" },
+};
 
-let stripePromise = null;
-function getStripe() {
-  if (!stripePromise && STRIPE_KEY) {
-    stripePromise = loadStripe(STRIPE_KEY);
+/**
+ * Redirect to Stripe Checkout via server-side session creation.
+ */
+export async function redirectToCheckout(userId, email, plan = "monthly") {
+  if (!HAS_STRIPE) {
+    console.warn("Stripe not configured — add VITE_STRIPE_PRICE_ID_MONTHLY to env vars");
+    return { error: "Stripe not configured" };
   }
-  return stripePromise;
+
+  const priceId = plan === "annual" ? PRICE_ANNUAL : PRICE_MONTHLY;
+  if (!priceId) return { error: `No price ID configured for ${plan} plan` };
+
+  try {
+    const res = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, email, priceId }),
+    });
+
+    const data = await res.json();
+    if (data.error) return { error: data.error };
+    if (data.url) window.location.href = data.url;
+    return {};
+  } catch (err) {
+    console.error("Checkout error:", err.message);
+    return { error: err.message };
+  }
 }
 
 /**
- * Redirect to Stripe Checkout for PRO subscription.
- * @param {string} userId — Supabase user ID (passed as client_reference_id)
- * @param {string} email  — pre-fill checkout email
+ * Open Stripe billing portal for subscription management.
  */
-export async function redirectToCheckout(userId, email) {
-  if (!HAS_STRIPE) {
-    console.warn("Stripe not configured — add VITE_STRIPE_PUBLISHABLE_KEY and VITE_STRIPE_PRICE_ID to .env");
-    return;
+export async function openBillingPortal(stripeCustomerId) {
+  if (!stripeCustomerId) return { error: "No Stripe customer ID found" };
+
+  try {
+    const res = await fetch("/api/create-portal-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stripeCustomerId }),
+    });
+
+    const data = await res.json();
+    if (data.error) return { error: data.error };
+    if (data.url) window.open(data.url, "_blank");
+    return {};
+  } catch (err) {
+    console.error("Portal error:", err.message);
+    return { error: err.message };
   }
-  const stripe = await getStripe();
-  if (!stripe) return;
-
-  const { error } = await stripe.redirectToCheckout({
-    lineItems: [{ price: PRICE_ID, quantity: 1 }],
-    mode: "subscription",
-    successUrl: `${window.location.origin}?upgraded=true`,
-    cancelUrl: `${window.location.origin}?upgrade=cancelled`,
-    clientReferenceId: userId || undefined,
-    customerEmail: email || undefined,
-  });
-
-  if (error) console.error("Stripe redirect error:", error.message);
 }
