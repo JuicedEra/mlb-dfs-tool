@@ -22,6 +22,15 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
+    // If returning from Stripe checkout, force a session refresh so
+    // updated user_metadata.is_pro from the webhook is picked up immediately
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("upgraded") === "true") {
+      supabase.auth.refreshSession().then(({ data: { session } }) => {
+        if (session?.user) updateUser(session.user);
+      });
+    }
+
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       updateUser(session?.user || null);
