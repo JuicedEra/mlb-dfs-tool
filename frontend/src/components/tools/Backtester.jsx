@@ -8,7 +8,7 @@ import {
 import { btGetWeeklyUsage, btRecordUsage } from "../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 
-const FREE_WEEKLY_LIMIT = 5;
+const FREE_WEEKLY_LIMIT = 3;
 
 const SEASON = new Date().getFullYear();
 
