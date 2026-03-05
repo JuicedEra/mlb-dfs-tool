@@ -1448,7 +1448,6 @@ function LandingFooter() {
             onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.35)"}>
             Contact Us
           </a>
-          ))}
         </div>
       </footer>
 
