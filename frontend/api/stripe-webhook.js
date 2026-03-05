@@ -8,7 +8,10 @@
 // Stripe webhook setup:
 //   1. In Stripe Dashboard → Developers → Webhooks → Add endpoint
 //   2. URL: https://your-domain.vercel.app/api/stripe-webhook
-//   3. Events: checkout.session.completed, customer.subscription.deleted
+//   3. Events to enable:
+//        checkout.session.completed
+//        customer.subscription.deleted
+//        customer.subscription.updated
 //   4. Copy signing secret to STRIPE_WEBHOOK_SECRET env var
 
 import Stripe from "stripe";
@@ -28,6 +31,12 @@ async function buffer(readable) {
   return Buffer.concat(chunks);
 }
 
+// Helper: find a Supabase user by Stripe customer ID
+async function findUserByCustomerId(customerId) {
+  const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  return users?.find(u => u.user_metadata?.stripe_customer_id === customerId) || null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
@@ -42,28 +51,59 @@ export default async function handler(req, res) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // ── Checkout completed: user starts trial or subscribes directly ──────────
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const userId = session.client_reference_id;
     if (userId) {
-      // Set is_pro = true on the Supabase user
-      const { error } = await supabase.auth.admin.updateUserById(userId, {
-        user_metadata: { is_pro: true, stripe_customer_id: session.customer },
-      });
+      // Retrieve the subscription to check if it's a trial
+      let isTrial = false;
+      if (session.subscription) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(session.subscription);
+          isTrial = sub.status === "trialing";
+        } catch (e) { console.warn("Could not retrieve subscription:", e.message); }
+      }
+
+      const metadata = {
+        is_pro: true,
+        stripe_customer_id: session.customer,
+        // Mark trial_used on first-ever trial — prevents re-use across payment methods on same account
+        ...(isTrial ? { trial_used: true, trial_started_at: new Date().toISOString() } : {}),
+      };
+
+      const { error } = await supabase.auth.admin.updateUserById(userId, { user_metadata: metadata });
       if (error) console.error("Failed to update user:", error.message);
-      else console.log(`✅ User ${userId} upgraded to PRO`);
+      else console.log(`✅ User ${userId} ${isTrial ? "started trial" : "upgraded to PRO"}`);
     }
   }
 
+  // ── Subscription updated: trial converted to active → keep PRO ───────────
+  if (event.type === "customer.subscription.updated") {
+    const sub = event.data.object;
+    if (sub.status === "active") {
+      const user = await findUserByCustomerId(sub.customer);
+      if (user && !user.user_metadata?.is_pro) {
+        await supabase.auth.admin.updateUserById(user.id, { user_metadata: { is_pro: true } });
+        console.log(`✅ User ${user.id} trial converted to active PRO`);
+      }
+    }
+    // Payment failure — suspend PRO access
+    if (sub.status === "past_due" || sub.status === "unpaid") {
+      const user = await findUserByCustomerId(sub.customer);
+      if (user) {
+        await supabase.auth.admin.updateUserById(user.id, { user_metadata: { is_pro: false } });
+        console.log(`⚠️ User ${user.id} PRO suspended (${sub.status})`);
+      }
+    }
+  }
+
+  // ── Subscription deleted: cancel or trial abandoned → revoke PRO ──────────
   if (event.type === "customer.subscription.deleted") {
     const sub = event.data.object;
-    // Find user by stripe_customer_id and revoke PRO
-    const { data: { users } } = await supabase.auth.admin.listUsers();
-    const user = users?.find(u => u.user_metadata?.stripe_customer_id === sub.customer);
+    const user = await findUserByCustomerId(sub.customer);
     if (user) {
-      await supabase.auth.admin.updateUserById(user.id, {
-        user_metadata: { is_pro: false },
-      });
+      await supabase.auth.admin.updateUserById(user.id, { user_metadata: { is_pro: false } });
       console.log(`⬇️ User ${user.id} downgraded from PRO`);
     }
   }
