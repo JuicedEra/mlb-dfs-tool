@@ -80,9 +80,6 @@ export default function App() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showProWelcome, setShowProWelcome] = useState(false);
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("diq_theme") === "dark");
-  const [oddsConnected, setOddsConnected] = useState(null);
 
   const { user, isPremium: authPremium, HAS_AUTH, signOut, loading: authLoading, justVerified } = useAuth();
   const [devPro, setDevPro] = useState(false);
@@ -92,12 +89,14 @@ export default function App() {
   const isDevProByEmail = DEV_PRO_EMAILS.includes(user?.email);
   const isPremium = isDevProByEmail || (HAS_AUTH ? authPremium : devPro);
 
-  // Handle return from Stripe checkout — show celebration screen
+  // Handle return from Stripe checkout
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("upgraded") === "true") {
       window.history.replaceState({}, "", window.location.pathname);
-      setShowProWelcome(true);
+      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", {
+        detail: { msg: "🎉 Welcome to DiamondIQ Edge! Your 7-day free trial is now active — enjoy full PRO access!", type: "ok", duration: 8000 }
+      }));
     }
   }, []);
   useEffect(() => {
@@ -108,6 +107,8 @@ export default function App() {
       setShowAuth(false);
     }
   }, [justVerified, user]);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("diq_theme") === "dark");
+  const [oddsConnected, setOddsConnected] = useState(null);
 
   // Apply dark mode theme to document root
   useEffect(() => {
@@ -210,30 +211,12 @@ export default function App() {
           ) : (
             <div style={{ position: "relative", marginLeft: 8 }}>
               <button onClick={() => setShowUserMenu(v => !v)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  background: isPremium ? "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(180,120,0,0.08))" : "none",
-                  border: isPremium ? "1.5px solid rgba(245,158,11,0.55)" : "1px solid rgba(255,255,255,0.15)",
-                  borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: "white", fontSize: 11,
-                  boxShadow: isPremium ? "0 0 12px rgba(245,158,11,0.2), inset 0 1px 0 rgba(255,215,0,0.1)" : "none",
-                  transition: "all 0.2s",
-                }}>
-                {isPremium ? (
-                  <span className="material-icons" style={{ fontSize: 16, color: "#F59E0B" }}>stars</span>
-                ) : (
-                  <span className="material-icons" style={{ fontSize: 16 }}>account_circle</span>
-                )}
+                style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: "white", fontSize: 11 }}>
+                <span className="material-icons" style={{ fontSize: 16 }}>account_circle</span>
                 <span style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {user.user_metadata?.full_name || user.email?.split("@")[0] || "Account"}
                 </span>
-                {isPremium && (
-                  <span style={{
-                    fontSize: 8, fontWeight: 900, letterSpacing: "0.8px",
-                    background: "linear-gradient(135deg, #F59E0B, #D97706)",
-                    color: "#0A2342", padding: "2px 6px", borderRadius: 4,
-                    boxShadow: "0 1px 4px rgba(245,158,11,0.4)",
-                  }}>EDGE</span>
-                )}
+                {isPremium && <span style={{ fontSize: 9, fontWeight: 800, background: "var(--accent)", padding: "1px 5px", borderRadius: 4 }}>PRO</span>}
               </button>
               {showUserMenu && (
                 <>
@@ -345,7 +328,6 @@ export default function App() {
       )}
       {showAuth && <AuthModal mode={authMode} onClose={() => setShowAuth(false)} />}
       {showUpgrade && <UpgradeModal onUpgrade={handleUpgrade} onClose={() => setShowUpgrade(false)} isPremium={isPremium} />}
-      {showProWelcome && <ProWelcomeModal user={user} onClose={() => setShowProWelcome(false)} />}
     </div>
   );
 }
@@ -983,155 +965,6 @@ function LandingFeatures() {
     </div>
   );
 }
-function ProWelcomeModal({ user, onClose }) {
-  const name = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there";
-  const [visible, setVisible] = useState(true);
-
-  function handleClose() {
-    setVisible(false);
-    setTimeout(onClose, 300);
-  }
-
-  const proFeatures = [
-    { icon: "auto_awesome",    label: "Top 5 PRO Locks",        desc: "Daily high-confidence picks" },
-    { icon: "sports_baseball", label: "Pitcher Intel",           desc: "Hittability scores & matchups" },
-    { icon: "query_stats",     label: "Full Statcast",           desc: "xBA, barrel%, exit velocity" },
-    { icon: "cloud_download",  label: "Streamer Finder",         desc: "Fantasy streaming picks daily" },
-    { icon: "gavel",           label: "ABS Tracker",             desc: "Challenge outcomes by zone" },
-    { icon: "trending_up",     label: "Live Odds & Props",       desc: "Real-time lines cross-referenced" },
-  ];
-
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 600,
-      background: "rgba(0,0,0,0.85)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      padding: 24,
-      opacity: visible ? 1 : 0,
-      transition: "opacity 0.3s ease",
-    }} onClick={e => e.target === e.currentTarget && handleClose()}>
-      <div style={{
-        background: "linear-gradient(160deg, #000F2B 0%, #001A45 50%, #0A2E1A 100%)",
-        border: "1px solid rgba(245,158,11,0.4)",
-        borderRadius: 20, width: "100%", maxWidth: 520,
-        boxShadow: "0 0 80px rgba(245,158,11,0.15), 0 24px 60px rgba(0,0,0,0.6)",
-        overflow: "hidden",
-        transform: visible ? "scale(1) translateY(0)" : "scale(0.95) translateY(10px)",
-        transition: "transform 0.3s ease",
-      }}>
-
-        {/* Gold top accent bar */}
-        <div style={{ height: 3, background: "linear-gradient(90deg, transparent, #F59E0B, #D97706, #F59E0B, transparent)" }} />
-
-        {/* Header */}
-        <div style={{ padding: "32px 32px 24px", textAlign: "center", position: "relative" }}>
-          <button onClick={handleClose} style={{
-            position: "absolute", top: 16, right: 16,
-            background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center",
-            justifyContent: "center", cursor: "pointer", color: "rgba(255,255,255,0.5)",
-          }}>
-            <span className="material-icons" style={{ fontSize: 16 }}>close</span>
-          </button>
-
-          {/* Diamond mark with glow */}
-          <div style={{ position: "relative", display: "inline-block", marginBottom: 20 }}>
-            <div style={{
-              position: "absolute", top: -16, left: -16, right: -16, bottom: -16,
-              background: "radial-gradient(circle, rgba(245,158,11,0.25) 0%, transparent 70%)",
-              borderRadius: "50%",
-            }} />
-            <div style={{
-              width: 72, height: 72, position: "relative",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <DiamondMark size={72} />
-              {/* Gold orbit ring */}
-              <div style={{
-                position: "absolute", top: -6, left: -6, right: -6, bottom: -6,
-                border: "1.5px solid rgba(245,158,11,0.5)",
-                borderRadius: "50%",
-                animation: "spin 8s linear infinite",
-                borderTopColor: "transparent", borderLeftColor: "transparent",
-              }} />
-            </div>
-          </div>
-
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 6,
-            background: "linear-gradient(135deg, rgba(245,158,11,0.15), rgba(180,120,0,0.1))",
-            border: "1px solid rgba(245,158,11,0.4)",
-            borderRadius: 50, padding: "4px 14px", marginBottom: 16,
-          }}>
-            <span className="material-icons" style={{ fontSize: 12, color: "#F59E0B" }}>stars</span>
-            <span style={{ fontSize: 10, fontWeight: 900, color: "#F59E0B", letterSpacing: "1.5px" }}>DIAMONDIQ EDGE</span>
-          </div>
-
-          <h2 style={{
-            fontFamily: "var(--font-display)", fontSize: "clamp(22px, 4vw, 28px)",
-            fontWeight: 900, color: "white", margin: "0 0 10px", lineHeight: 1.15,
-          }}>
-            Welcome to the Edge,<br />
-            <span style={{ color: "#F59E0B" }}>{name}</span>
-          </h2>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.6 }}>
-            Your 7-day free trial is active. Full PRO access — no restrictions.<br />
-            You won't be charged until your trial ends.
-          </p>
-        </div>
-
-        {/* Features grid */}
-        <div style={{ padding: "0 28px 24px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {proFeatures.map(f => (
-              <div key={f.label} style={{
-                display: "flex", alignItems: "flex-start", gap: 10,
-                padding: "12px 14px", borderRadius: 10,
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.06)",
-              }}>
-                <div style={{
-                  width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                  background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.15)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <span className="material-icons" style={{ fontSize: 15, color: "#4ADE80" }}>{f.icon}</span>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "white", marginBottom: 2 }}>{f.label}</div>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", lineHeight: 1.4 }}>{f.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CTA */}
-        <div style={{ padding: "0 28px 28px" }}>
-          <button onClick={handleClose} style={{
-            width: "100%", padding: "14px 0", borderRadius: 12, border: "none",
-            cursor: "pointer",
-            background: "linear-gradient(135deg, #F59E0B, #D97706)",
-            color: "#0A2342", fontSize: 14, fontWeight: 900,
-            boxShadow: "0 4px 24px rgba(245,158,11,0.4)",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}>
-            <span className="material-icons" style={{ fontSize: 18 }}>bolt</span>
-            Start Using DiamondIQ Edge
-          </button>
-          <div style={{ textAlign: "center", marginTop: 10, fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.6 }}>
-            Cancel anytime in Account Settings · No charge for 7 days
-          </div>
-        </div>
-
-        <style>{`
-          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        `}</style>
-      </div>
-    </div>
-  );
-}
-
 const FAQ_ITEMS = [
   {
     q: "Is DiamondIQ really free?",
