@@ -1,24 +1,42 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 
 export default function AuthModal({ onClose, mode: initialMode = "login" }) {
   const { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword } = useAuth();
-  const [mode, setMode]       = useState(initialMode); // login | signup | reset
-  const [email, setEmail]     = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError]     = useState(null);
-  const [msg, setMsg]         = useState(null);
+  const [mode, setMode]     = useState(initialMode);
+  const [error, setError]   = useState(null);
+  const [msg, setMsg]       = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Use refs so autofilled values are always captured regardless of React state
+  const emailRef    = useRef(null);
+  const passwordRef = useRef(null);
+
+  function cleanError(message) {
+    if (!message) return "Something went wrong.";
+    if (message.includes("missing email or phone")) return "Please enter a valid email address.";
+    if (message.includes("Invalid login credentials")) return "Incorrect email or password.";
+    if (message.includes("Email not confirmed")) return "Please confirm your email before signing in.";
+    if (message.includes("User already registered")) return "An account with this email already exists.";
+    if (message.includes("Password should be")) return "Password must be at least 6 characters.";
+    return message;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null); setMsg(null); setLoading(true);
 
+    // Read directly from DOM refs to capture autofilled values
+    const email    = emailRef.current?.value?.trim() || "";
+    const password = passwordRef.current?.value || "";
+
+    if (!email) { setError("Please enter your email address."); setLoading(false); return; }
+
     if (mode === "reset") {
       const { error: err } = await resetPassword(email);
       setLoading(false);
-      if (err) setError(err.message);
-      else setMsg("Check your email for a reset link");
+      if (err) setError(cleanError(err.message));
+      else setMsg("Check your email for a reset link.");
       return;
     }
 
@@ -27,9 +45,9 @@ export default function AuthModal({ onClose, mode: initialMode = "login" }) {
     setLoading(false);
 
     if (err) {
-      setError(err.message);
+      setError(cleanError(err.message));
     } else if (mode === "signup") {
-      setMsg("Check your email to confirm your account");
+      setMsg("Check your email to confirm your account.");
     } else {
       onClose();
     }
@@ -38,8 +56,10 @@ export default function AuthModal({ onClose, mode: initialMode = "login" }) {
   async function handleGoogle() {
     setError(null);
     const { error: err } = await signInWithGoogle();
-    if (err) setError(err.message);
+    if (err) setError(cleanError(err.message));
   }
+
+  function switchMode(m) { setMode(m); setError(null); setMsg(null); }
 
   return (
     <div className="add-pick-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -51,7 +71,7 @@ export default function AuthModal({ onClose, mode: initialMode = "login" }) {
           <button className="close-btn" onClick={onClose}><span className="material-icons">close</span></button>
         </div>
         <div className="add-pick-modal-body">
-          {/* Google OAuth */}
+
           {mode !== "reset" && (
             <>
               <button className="btn btn-sm" onClick={handleGoogle}
@@ -70,18 +90,29 @@ export default function AuthModal({ onClose, mode: initialMode = "login" }) {
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div className="form-field">
               <label className="form-label">Email</label>
-              <input type="email" className="form-input" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com" />
+              <input
+                ref={emailRef}
+                type="email"
+                className="form-input"
+                autoComplete="email"
+                placeholder="you@example.com"
+              />
             </div>
             {mode !== "reset" && (
               <div className="form-field">
                 <label className="form-label">Password</label>
-                <input type="password" className="form-input" value={password} onChange={e => setPassword(e.target.value)}
-                  required minLength={6} placeholder="Min 6 characters" />
+                <input
+                  ref={passwordRef}
+                  type="password"
+                  className="form-input"
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  placeholder="Min 6 characters"
+                />
               </div>
             )}
 
             {error && <div style={{ fontSize: 12, color: "var(--red-data)", padding: "8px 10px", background: "rgba(239,68,68,0.08)", borderRadius: 6 }}>{error}</div>}
-            {msg && <div style={{ fontSize: 12, color: "var(--green-light)", padding: "8px 10px", background: "rgba(34,197,94,0.08)", borderRadius: 6 }}>{msg}</div>}
+            {msg   && <div style={{ fontSize: 12, color: "var(--green-light)", padding: "8px 10px", background: "rgba(34,197,94,0.08)", borderRadius: 6 }}>{msg}</div>}
 
             <button type="submit" className="btn btn-primary btn-sm" disabled={loading}
               style={{ width: "100%", justifyContent: "center", padding: "10px 0" }}>
@@ -90,19 +121,18 @@ export default function AuthModal({ onClose, mode: initialMode = "login" }) {
           </form>
 
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
-            {mode === "login" && (
-              <>
-                <button onClick={() => { setMode("signup"); setError(null); setMsg(null); }} style={{ background: "none", border: "none", color: "var(--accent-light)", cursor: "pointer", fontSize: 11 }}>Create account</button>
-                <button onClick={() => { setMode("reset"); setError(null); setMsg(null); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}>Forgot password?</button>
-              </>
-            )}
+            {mode === "login" && (<>
+              <button onClick={() => switchMode("signup")} style={{ background: "none", border: "none", color: "var(--accent-light)", cursor: "pointer", fontSize: 11 }}>Create account</button>
+              <button onClick={() => switchMode("reset")}  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}>Forgot password?</button>
+            </>)}
             {mode === "signup" && (
-              <button onClick={() => { setMode("login"); setError(null); setMsg(null); }} style={{ background: "none", border: "none", color: "var(--accent-light)", cursor: "pointer", fontSize: 11 }}>Already have an account? Sign in</button>
+              <button onClick={() => switchMode("login")} style={{ background: "none", border: "none", color: "var(--accent-light)", cursor: "pointer", fontSize: 11 }}>Already have an account? Sign in</button>
             )}
             {mode === "reset" && (
-              <button onClick={() => { setMode("login"); setError(null); setMsg(null); }} style={{ background: "none", border: "none", color: "var(--accent-light)", cursor: "pointer", fontSize: 11 }}>Back to sign in</button>
+              <button onClick={() => switchMode("login")} style={{ background: "none", border: "none", color: "var(--accent-light)", cursor: "pointer", fontSize: 11 }}>Back to sign in</button>
             )}
           </div>
+
         </div>
       </div>
     </div>
