@@ -31,6 +31,17 @@ async function loadPropLinesForGame(game) {
 // Module-level cache — survives component unmount/remount
 const _scoreCache = {};
 
+// Persist started game player IDs in sessionStorage so rank locks survive refresh
+const STARTED_KEY = "diq_started_players_";
+function getStartedIds(date) {
+  try { return new Set(JSON.parse(sessionStorage.getItem(STARTED_KEY + date) || "[]")); }
+  catch { return new Set(); }
+}
+function saveStartedIds(date, ids) {
+  try { sessionStorage.setItem(STARTED_KEY + date, JSON.stringify([...ids])); }
+  catch {}
+}
+
 // Domed/retractable-roof venues — no weather display
 const DOME_VENUES = new Set([
   "Tropicana Field", "loanDepot Park", "Minute Maid Park", "Globe Life Field",
@@ -274,44 +285,57 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
       });
 
       // ── Preserve rank positions for players whose games have started ──────
-      // If we have previous picks, players with started games keep their
-      // original rank slot so the leaderboard doesn't reshuffle mid-game.
+      // Players with started games keep their original rank slot so the
+      // leaderboard doesn't reshuffle mid-game, even after a page refresh.
       const now = new Date();
       const prevPicks = _scoreCache[date]?.picks || [];
-      if (prevPicks.length > 0) {
-        const startedPlayerIds = new Set(
-          prevPicks
-            .filter(p => p.game.gameDate && new Date(p.game.gameDate) <= now)
-            .map(p => p.batter.id)
-        );
 
-        if (startedPlayerIds.size > 0) {
-          // Keep started players at their previous rank, splice in updated unstarted players
-          const prevStarted = prevPicks.filter(p => startedPlayerIds.has(p.batter.id));
-          const newUnstarted = deduped.filter(p => !startedPlayerIds.has(p.batter.id));
-
-          // Merge: interleave by original rank position
-          const prevRankMap = new Map(prevPicks.map((p, i) => [p.batter.id, i]));
-          const merged = [...prevStarted, ...newUnstarted];
-          merged.sort((a, b) => {
-            const aRank = prevRankMap.has(a.batter.id) ? prevRankMap.get(a.batter.id) : 999;
-            const bScore = b.scoreData.score;
-            const aScore = a.scoreData.score;
-            // Started players: preserve original rank
-            // Unstarted players: sort by new score, slotted between started players
-            if (startedPlayerIds.has(a.batter.id) && startedPlayerIds.has(b.batter.id)) {
-              return prevRankMap.get(a.batter.id) - prevRankMap.get(b.batter.id);
-            }
-            if (startedPlayerIds.has(a.batter.id)) return aRank - 999;
-            if (startedPlayerIds.has(b.batter.id)) return 999 - prevRankMap.get(b.batter.id);
-            return bScore - aScore;
-          });
-
-          setPicks(merged);
-          const confirmedCount = [...lineupMap.values()].filter(v => v.home.status === "confirmed" || v.away.status === "confirmed").length;
-          _scoreCache[date] = { picks: merged, teams: teamsList || teams, ts: Date.now(), confirmedCount };
-          return;
+      // Build started IDs from current data AND sessionStorage (survives refresh)
+      const startedFromData = new Set(
+        prevPicks
+          .filter(p => p.game.gameDate && new Date(p.game.gameDate) <= now)
+          .map(p => p.batter.id)
+      );
+      // Also mark any player whose game has started according to current deduped list
+      deduped.forEach(p => {
+        if (p.game.gameDate && new Date(p.game.gameDate) <= now) {
+          startedFromData.add(p.batter.id);
         }
+      });
+      // Merge with persisted set
+      const persistedIds = getStartedIds(date);
+      const startedPlayerIds = new Set([...startedFromData, ...persistedIds]);
+      // Save back so next refresh remembers
+      if (startedPlayerIds.size > 0) saveStartedIds(date, startedPlayerIds);
+
+      // Use previous rank from cache OR reconstruct from deduped order
+      const rankSource = prevPicks.length > 0 ? prevPicks : deduped;
+      const prevRankMap = new Map(rankSource.map((p, i) => [p.batter.id, i]));
+
+      if (startedPlayerIds.size > 0) {
+        // Keep started players at their previous rank, splice in updated unstarted players
+        const prevStarted = rankSource.filter(p => startedPlayerIds.has(p.batter.id));
+        // Update started players with latest live stats but keep their rank
+        const latestById = new Map(deduped.map(p => [p.batter.id, p]));
+        const prevStartedUpdated = prevStarted.map(p => latestById.get(p.batter.id) || p);
+        const newUnstarted = deduped.filter(p => !startedPlayerIds.has(p.batter.id));
+
+        const merged = [...prevStartedUpdated, ...newUnstarted];
+        merged.sort((a, b) => {
+          const aRank = prevRankMap.has(a.batter.id) ? prevRankMap.get(a.batter.id) : 999;
+          const bRank = prevRankMap.has(b.batter.id) ? prevRankMap.get(b.batter.id) : 999;
+          const bScore = b.scoreData.score;
+          const aScore = a.scoreData.score;
+          if (startedPlayerIds.has(a.batter.id) && startedPlayerIds.has(b.batter.id)) return aRank - bRank;
+          if (startedPlayerIds.has(a.batter.id)) return aRank - 999;
+          if (startedPlayerIds.has(b.batter.id)) return 999 - bRank;
+          return bScore - aScore;
+        });
+
+        setPicks(merged);
+        const confirmedCount = [...lineupMap.values()].filter(v => v.home.status === "confirmed" || v.away.status === "confirmed").length;
+        _scoreCache[date] = { picks: merged, teams: teamsList || teams, ts: Date.now(), confirmedCount };
+        return;
       }
 
       setPicks(deduped);
