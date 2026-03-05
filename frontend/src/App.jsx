@@ -55,9 +55,19 @@ export default function App() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const { user, isPremium: authPremium, HAS_AUTH, signOut, loading: authLoading } = useAuth();
+  const { user, isPremium: authPremium, HAS_AUTH, signOut, loading: authLoading, justVerified } = useAuth();
   const [devPro, setDevPro] = useState(false);
   const [devLanding, setDevLanding] = useState(false);
+
+  // Show welcome toast when email verification completes
+  useEffect(() => {
+    if (justVerified && user) {
+      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", {
+        detail: { msg: `Welcome to DiamondIQ, ${user.user_metadata?.full_name || user.email?.split("@")[0] || "friend"}! You're all set. 🎉`, type: "ok", duration: 7000 }
+      }));
+      setShowAuth(false);
+    }
+  }, [justVerified, user]);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("diq_theme") === "dark");
   const [oddsConnected, setOddsConnected] = useState(null);
   const isPremium = HAS_AUTH ? authPremium : devPro;
@@ -289,7 +299,8 @@ function LandingHero({ onSignIn, onSignUp }) {
     const { error: err } = await fn(email, password);
     setLoading(false);
     if (err) setError(err.message);
-    else if (authMode === 'signup') setMsg('Check your email to confirm your account');
+    else if (authMode === 'signup') setMsg('✉️ Check your email and click the confirmation link to finish signing up. Then come back here and sign in!');
+    else setMsg(null);
   }
 
   async function handleGoogle() {
@@ -483,8 +494,16 @@ function LandingHero({ onSignIn, onSignUp }) {
                 </div>
               )}
               {msg && (
-                <div style={{ fontSize: 12, color: '#4ADE80', padding: '8px 12px', background: 'rgba(34,197,94,0.10)', borderRadius: 8, border: '1px solid rgba(34,197,94,0.2)' }}>
+                <div style={{ fontSize: 12, color: '#4ADE80', padding: '12px 14px', background: 'rgba(34,197,94,0.10)', borderRadius: 8, border: '1px solid rgba(34,197,94,0.2)', lineHeight: 1.6 }}>
                   {msg}
+                  {authMode === 'signup' && (
+                    <div style={{ marginTop: 10 }}>
+                      <button onClick={() => { setAuthMode('login'); setMsg(null); }}
+                        style={{ fontSize: 11, fontWeight: 800, color: 'white', background: 'rgba(34,197,94,0.25)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: 6, padding: '5px 12px', cursor: 'pointer' }}>
+                        Already confirmed? Sign in →
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
