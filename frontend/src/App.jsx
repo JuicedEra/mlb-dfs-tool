@@ -38,12 +38,35 @@ const NAV = [
   ]}
 ];
 
-function DiamondMark() {
+function DiamondMark({ size = 36 }) {
   return (
-    <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="5" y="5" width="26" height="26" rx="3" fill="#0A6E4B" transform="rotate(45 18 18)"/>
-      <text x="18" y="22" textAnchor="middle" fontSize="11" fontWeight="800"
-        fontFamily="'Roboto Condensed', sans-serif" fill="white" letterSpacing="0.5">IQ</text>
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Outer glow ring */}
+      <circle cx="20" cy="20" r="19" fill="url(#dmGrad)" />
+      {/* Diamond shape */}
+      <path d="M20 6 L34 20 L20 34 L6 20 Z" fill="url(#dmDiamond)" />
+      {/* Diamond inner highlight */}
+      <path d="M20 9 L31 20 L20 31 L9 20 Z" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="0.5" />
+      {/* Stitching arcs — left */}
+      <path d="M13 16 Q11 20 13 24" stroke="rgba(255,255,255,0.25)" strokeWidth="0.8" fill="none" strokeLinecap="round" />
+      <path d="M11.5 16.5 Q9 20 11.5 23.5" stroke="rgba(255,255,255,0.12)" strokeWidth="0.6" fill="none" strokeLinecap="round" />
+      {/* Stitching arcs — right */}
+      <path d="M27 16 Q29 20 27 24" stroke="rgba(255,255,255,0.25)" strokeWidth="0.8" fill="none" strokeLinecap="round" />
+      <path d="M28.5 16.5 Q31 20 28.5 23.5" stroke="rgba(255,255,255,0.12)" strokeWidth="0.6" fill="none" strokeLinecap="round" />
+      {/* IQ text */}
+      <text x="20" y="24.5" textAnchor="middle" fontSize="10.5" fontWeight="900"
+        fontFamily="'Space Grotesk', 'Inter', sans-serif" fill="white" letterSpacing="0.8">IQ</text>
+      <defs>
+        <radialGradient id="dmGrad" cx="35%" cy="30%" r="70%">
+          <stop offset="0%" stopColor="#1A4A6E" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#000F2B" stopOpacity="0.2" />
+        </radialGradient>
+        <linearGradient id="dmDiamond" x1="6" y1="6" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0D9E6A" />
+          <stop offset="50%" stopColor="#0A6E4B" />
+          <stop offset="100%" stopColor="#075C3E" />
+        </linearGradient>
+      </defs>
     </svg>
   );
 }
@@ -71,7 +94,7 @@ export default function App() {
     if (params.get("upgraded") === "true") {
       window.history.replaceState({}, "", window.location.pathname);
       window.dispatchEvent(new CustomEvent("diamondiq:picktoast", {
-        detail: { msg: "🎉 Welcome to DiamondIQ Edge! Your PRO access is now active.", type: "ok", duration: 8000 }
+        detail: { msg: "🎉 Welcome to DiamondIQ Edge! Your 7-day free trial is now active — enjoy full PRO access!", type: "ok", duration: 8000 }
       }));
     }
   }, []);
@@ -173,8 +196,8 @@ export default function App() {
                 Sign In
               </button>
               <button className="btn btn-sm" onClick={() => { setAuthMode("signup"); setShowAuth(true); }}
-                style={{ background: "var(--accent)", color: "white", border: "none", fontSize: 11, fontWeight: 700, padding: "6px 14px" }}>
-                Get Started Free
+                style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", border: "none", fontSize: 11, fontWeight: 800, padding: "6px 14px" }}>
+                Try Free 7 Days
               </button>
             </div>
           ) : (
@@ -194,9 +217,9 @@ export default function App() {
                     <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontSize: 11, color: "var(--text-muted)" }}>{user.email}</div>
                     {!isPremium && (
                       <button className="user-menu-item user-menu-upgrade" onClick={() => { setShowUserMenu(false); handleUpgrade(); }}>
-                        <span className="material-icons" style={{ fontSize: 14 }}>star</span>
-                        <span>Upgrade to PRO</span>
-                        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 800, background: "var(--yellow)", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>$14.99/mo</span>
+                        <span className="material-icons" style={{ fontSize: 14 }}>free_cancellation</span>
+                        <span>Start Free 7-Day Trial</span>
+                        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 800, background: "#4ADE80", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>FREE</span>
                       </button>
                     )}
                     {isPremium && (
@@ -254,16 +277,17 @@ export default function App() {
               </div>
             </div>
             {!isPremium && (
-              <div style={{ margin: "0 10px 16px", padding: "12px", borderRadius: 8, background: "linear-gradient(135deg, rgba(245,158,11,0.10), rgba(21,128,61,0.10))", border: "1px solid rgba(245,158,11,0.15)" }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: "var(--yellow)", marginBottom: 4 }}>
-                  <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle", marginRight: 4 }}>star</span>Unlock PRO
+              <div style={{ margin: "0 10px 16px", padding: "14px", borderRadius: 10, background: "linear-gradient(135deg, rgba(10,110,75,0.15), rgba(245,158,11,0.08))", border: "1px solid rgba(74,222,128,0.2)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                  <span className="material-icons" style={{ fontSize: 14, color: "#4ADE80" }}>free_cancellation</span>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: "#4ADE80" }}>7-Day Free Trial</div>
                 </div>
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", lineHeight: 1.5, marginBottom: 8 }}>
-                  Top 5 picks, Pitcher Intel, Streamer Finder, Statcast, Backtester, ABS Tracker, live odds & more
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", lineHeight: 1.55, marginBottom: 10 }}>
+                  Pitcher Intel, Statcast, Streamer Finder, ABS Tracker + Top 5 locks — free for 7 days.
                 </div>
                 <button className="btn btn-sm" onClick={handleUpgrade}
-                  style={{ width: "100%", justifyContent: "center", background: "var(--yellow)", color: "#0A2342", fontSize: 10, fontWeight: 800, border: "none", padding: "6px 0" }}>
-                  Upgrade Now
+                  style={{ width: "100%", justifyContent: "center", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", fontSize: 10, fontWeight: 900, border: "none", padding: "7px 0", borderRadius: 7 }}>
+                  Start Free Trial — No charge today
                 </button>
               </div>
             )}
@@ -453,6 +477,12 @@ function LandingHero({ onSignIn, onSignUp }) {
             <span style={{ fontSize: 10, fontWeight: 800, color: '#4ADE80', letterSpacing: '1.5px', textTransform: 'uppercase' }}>2026 Season · Live Daily Updates</span>
           </div>
 
+          {/* Trial offer pill */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(10,110,75,0.12))', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 50, padding: '6px 16px', marginBottom: 20 }} className="landing-badge">
+            <span className="material-icons" style={{ fontSize: 13, color: '#F59E0B' }}>free_cancellation</span>
+            <span style={{ fontSize: 10, fontWeight: 900, color: '#F59E0B', letterSpacing: '0.8px' }}>7-Day Free PRO Trial · No credit card charge today</span>
+          </div>
+
           <h1 className="landing-h1" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(30px, 4vw, 52px)', fontWeight: 900, color: 'white', margin: '0 0 16px', lineHeight: 1.08, letterSpacing: '-0.5px' }}>
             Know who's getting<br />
             a hit{' '}
@@ -545,23 +575,32 @@ function LandingHero({ onSignIn, onSignUp }) {
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               }}>
                 {loading ? 'Please wait...' : authMode === 'signup' ? (
-                  <><span className="material-icons" style={{ fontSize: 16 }}>rocket_launch</span>Get Started Free</>
+                  <><span className="material-icons" style={{ fontSize: 16 }}>free_cancellation</span>Start Free — Try PRO for 7 Days</>
                 ) : (
                   <><span className="material-icons" style={{ fontSize: 16 }}>login</span>Sign In</>
                 )}
               </button>
             </form>
 
-            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
               {authMode === 'signup' ? (
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>No credit card required</span>
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Free account — no credit card needed</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: 'rgba(74,222,128,0.6)', lineHeight: 1.5 }}>
+                    ✓ Unlock PRO tools with a 7-day free trial after signing up
+                  </div>
+                </>
               ) : (
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>&nbsp;</span>
-              )}
-              {authMode === 'login' && (
-                <button onClick={onSignIn} style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                  Forgot password?
-                </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>&nbsp;</span>
+                  {authMode === 'login' && (
+                    <button onClick={onSignIn} style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -839,7 +878,44 @@ function LandingFeatures() {
           ))}
         </div>
 
-        {/* Scoring factors — with algorithm context description */}
+        {/* 7-Day Trial CTA Banner */}
+        <div style={{
+          marginTop: 32, background: 'linear-gradient(135deg, #000F2B, #001A45)',
+          borderRadius: 20, padding: 'clamp(24px, 3vw, 36px)',
+          border: '1px solid rgba(74,222,128,0.18)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 24, flexWrap: 'wrap',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 14, flexShrink: 0,
+              background: 'linear-gradient(135deg, #0A6E4B, #4ADE80)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span className="material-icons" style={{ fontSize: 26, color: 'white' }}>free_cancellation</span>
+            </div>
+            <div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(16px, 2vw, 20px)', fontWeight: 900, color: 'white' }}>
+                Try PRO free for 7 days
+              </div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 3, lineHeight: 1.5 }}>
+                Full access to every PRO tool. No charge today. Cancel before the trial ends to pay nothing.<br />
+                <span style={{ color: 'rgba(74,222,128,0.6)', fontSize: 10 }}>One trial per account · $14.99/mo or $119/yr after trial</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            style={{
+              padding: '13px 28px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+              color: '#0A2342', fontSize: 14, fontWeight: 900,
+              boxShadow: '0 4px 20px rgba(245,158,11,0.35)',
+              whiteSpace: 'nowrap', flexShrink: 0,
+            }}>
+            Start Free Trial →
+          </button>
+        </div>
         <div style={{ marginTop: 36, background: 'white', borderRadius: 16, border: '1px solid var(--border)', padding: 'clamp(20px, 3vw, 32px)' }}>
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>Proprietary Algorithm</div>
@@ -883,6 +959,9 @@ function UpgradeModal({ onUpgrade, onClose, isPremium }) {
   const { user } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState("annual");
   const [loading, setLoading] = useState(false);
+  // trial_used is stored in user metadata; default false if not set
+  const trialUsed = user?.user_metadata?.trial_used === true;
+  const showTrial = !trialUsed; // show trial offer if never used
 
   if (isPremium) return null;
 
@@ -899,7 +978,7 @@ function UpgradeModal({ onUpgrade, onClose, isPremium }) {
   async function handleCheckout() {
     setLoading(true);
     if (HAS_STRIPE && user) {
-      await redirectToCheckout(user.id, user.email, selectedPlan);
+      await redirectToCheckout(user.id, user.email, selectedPlan, showTrial);
     } else {
       onUpgrade(selectedPlan);
     }
@@ -909,8 +988,8 @@ function UpgradeModal({ onUpgrade, onClose, isPremium }) {
 
   return (
     <div className="add-pick-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="add-pick-modal" style={{ maxWidth: 420 }}>
-        <div className="add-pick-modal-header" style={{ background: "linear-gradient(135deg, #0A2342, #0D3060)" }}>
+      <div className="add-pick-modal" style={{ maxWidth: 440 }}>
+        <div className="add-pick-modal-header" style={{ background: "linear-gradient(135deg, #0A2342, #0D3060)", paddingBottom: 0 }}>
           <div>
             <span style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: "white" }}>
               <span className="material-icons" style={{ fontSize: 18, verticalAlign: "middle", marginRight: 6, color: "#F59E0B" }}>star</span>
@@ -920,20 +999,53 @@ function UpgradeModal({ onUpgrade, onClose, isPremium }) {
           </div>
           <button className="close-btn" onClick={onClose}><span className="material-icons">close</span></button>
         </div>
+
+        {/* Trial hero banner */}
+        {showTrial && (
+          <div style={{
+            background: "linear-gradient(135deg, #0A2342, #0D3060)",
+            padding: "16px 20px 20px",
+            borderBottom: "1px solid rgba(74,222,128,0.2)",
+          }}>
+            <div style={{
+              background: "linear-gradient(135deg, rgba(74,222,128,0.12), rgba(10,110,75,0.18))",
+              border: "1px solid rgba(74,222,128,0.3)",
+              borderRadius: 12, padding: "14px 16px",
+              display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: "50%",
+                background: "linear-gradient(135deg, #0A6E4B, #4ADE80)",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <span className="material-icons" style={{ fontSize: 22, color: "white" }}>free_cancellation</span>
+              </div>
+              <div>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 900, color: "white", lineHeight: 1.2 }}>
+                  7 Days Free — No charge today
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 3, lineHeight: 1.4 }}>
+                  Full PRO access for 7 days. Then {selectedPlan === "annual" ? "$119/yr" : "$14.99/mo"} — cancel anytime before.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="add-pick-modal-body" style={{ gap: 0, padding: "16px 20px" }}>
 
           {/* Features list */}
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 16 }}>
             {features.map(f => (
-              <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
-                <span className="material-icons" style={{ fontSize: 15, color: "var(--accent)" }}>{f.icon}</span>
+              <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
+                <span className="material-icons" style={{ fontSize: 14, color: "var(--accent)" }}>{f.icon}</span>
                 <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{f.label}</span>
               </div>
             ))}
           </div>
 
           {/* Plan selector */}
-          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
             {[
               { id: "monthly", price: "$14.99", period: "/ month", badge: null },
               { id: "annual",  price: "$119",   period: "/ year",  badge: "Save $61" },
@@ -967,11 +1079,22 @@ function UpgradeModal({ onUpgrade, onClose, isPremium }) {
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
             }}>
             <span className="material-icons" style={{ fontSize: 16 }}>bolt</span>
-            {loading ? "Redirecting to checkout..." : `Get DiamondIQ Edge — ${selectedPlan === "annual" ? "$119/yr" : "$14.99/mo"}`}
+            {loading ? "Redirecting to checkout..." : showTrial
+              ? "Start Free 7-Day Trial"
+              : `Get DiamondIQ Edge — ${selectedPlan === "annual" ? "$119/yr" : "$14.99/mo"}`
+            }
           </button>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 10, textAlign: "center" }}>
-            Secure checkout via Stripe · Cancel anytime
-          </div>
+
+          {showTrial ? (
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 10, textAlign: "center", lineHeight: 1.6 }}>
+              Credit card required · You won't be charged for 7 days<br />
+              <span style={{ color: "rgba(74,222,128,0.7)" }}>One trial per account · Cancel before trial ends to pay nothing</span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 10, textAlign: "center" }}>
+              Secure checkout via Stripe · Cancel anytime
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1063,14 +1186,25 @@ function AccountSettings({ isPremium, onUpgrade }) {
         }}>
           <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, background: "radial-gradient(circle, rgba(74,222,128,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
           <div style={{ padding: "22px 24px" }}>
+            {/* Trial badge */}
+            {!user?.user_metadata?.trial_used && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(74,222,128,0.12)", border: "1px solid rgba(74,222,128,0.3)", borderRadius: 50, padding: "4px 12px", marginBottom: 14 }}>
+                <span className="material-icons" style={{ fontSize: 12, color: "#4ADE80" }}>free_cancellation</span>
+                <span style={{ fontSize: 10, fontWeight: 900, color: "#4ADE80", letterSpacing: "0.8px" }}>7-DAY FREE TRIAL AVAILABLE</span>
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <span className="material-icons" style={{ color: "#F59E0B", fontSize: 20 }}>star</span>
-                  <span style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: "white" }}>Upgrade to DiamondIQ Edge</span>
+                  <span style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: "white" }}>
+                    {user?.user_metadata?.trial_used ? "Upgrade to DiamondIQ Edge" : "Try DiamondIQ Edge Free"}
+                  </span>
                 </div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, marginBottom: 16 }}>
-                  Unlock everything — Pitcher Intel, Streamer Finder, Statcast,<br />unlimited Backtester, live prop lines, ABS Tracker & Top 5 PRO locks.
+                  {user?.user_metadata?.trial_used
+                    ? "Unlock everything — Pitcher Intel, Streamer Finder, Statcast, unlimited Backtester, live prop lines, ABS Tracker & Top 5 PRO locks."
+                    : "Full PRO access free for 7 days. Card required — you won't be charged until the trial ends. Cancel any time."}
                 </div>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
                   {["Pitcher Intel", "Streamer Finder", "Unlimited Backtester", "Live Odds", "Top 5 Locks"].map(f => (
@@ -1085,14 +1219,19 @@ function AccountSettings({ isPremium, onUpgrade }) {
                     boxShadow: "0 4px 16px rgba(245,158,11,0.4)",
                     display: "flex", alignItems: "center", gap: 8,
                   }}>
-                    <span className="material-icons" style={{ fontSize: 16 }}>bolt</span>
-                    Upgrade Now — $14.99/mo
+                    <span className="material-icons" style={{ fontSize: 16 }}>{user?.user_metadata?.trial_used ? "bolt" : "free_cancellation"}</span>
+                    {user?.user_metadata?.trial_used ? "Upgrade Now — $14.99/mo" : "Start Free 7-Day Trial"}
                   </button>
                   <button onClick={() => onUpgrade("annual")}
                     style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "rgba(255,255,255,0.5)", textDecoration: "underline", padding: 0 }}>
                     or $119/yr · save $61
                   </button>
                 </div>
+                {!user?.user_metadata?.trial_used && (
+                  <div style={{ marginTop: 12, fontSize: 10, color: "rgba(255,255,255,0.3)", lineHeight: 1.5 }}>
+                    One trial per account · No charge for 7 days · Cancel to pay nothing
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1106,8 +1245,18 @@ function AccountSettings({ isPremium, onUpgrade }) {
           <div style={{ padding: 16, fontSize: 13, color: "var(--text-secondary)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
               <span className="material-icons" style={{ color: "var(--green-light)", fontSize: 18 }}>verified</span>
-              <span style={{ fontWeight: 700 }}>PRO subscription active</span>
+              <span style={{ fontWeight: 700 }}>
+                {user?.user_metadata?.trial_started_at && !user?.user_metadata?.trial_converted
+                  ? "PRO Trial Active — 7 days free"
+                  : "PRO subscription active"}
+              </span>
             </div>
+            {user?.user_metadata?.trial_started_at && (
+              <div style={{ fontSize: 11, color: "rgba(74,222,128,0.8)", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, lineHeight: 1.5 }}>
+                <span className="material-icons" style={{ fontSize: 13, verticalAlign: "middle", marginRight: 4 }}>free_cancellation</span>
+                Your free trial started {new Date(user.user_metadata.trial_started_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Cancel before 7 days to pay nothing.
+              </div>
+            )}
             <p style={{ lineHeight: 1.6, marginBottom: 12 }}>Manage billing, update payment method, or cancel through Stripe's secure portal.</p>
             <button className="btn btn-sm" onClick={handleManageSubscription} disabled={portalLoading}
               style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
