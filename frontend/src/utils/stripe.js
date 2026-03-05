@@ -30,7 +30,7 @@ export async function redirectToCheckout(userId, email, plan = "monthly") {
     const res = await fetch("/api/create-checkout-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, email, priceId }),
+      body: JSON.stringify({ userId, email, priceId, plan }),
     });
 
     const data = await res.json();
