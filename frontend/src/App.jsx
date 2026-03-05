@@ -984,7 +984,6 @@ function LandingFeatures() {
   );
 }
 function ProWelcomeModal({ user, onClose }) {
-  const { useState: useLocalState } = { useState };
   const name = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there";
   const [visible, setVisible] = useState(true);
 
