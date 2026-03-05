@@ -16,8 +16,12 @@ export const PRICES = {
 
 /**
  * Redirect to Stripe Checkout via server-side session creation.
+ * @param {string} userId - Supabase user ID
+ * @param {string} email - User's email
+ * @param {string} plan - "monthly" | "annual"
+ * @param {boolean} withTrial - Whether to apply 7-day free trial
  */
-export async function redirectToCheckout(userId, email, plan = "monthly") {
+export async function redirectToCheckout(userId, email, plan = "monthly", withTrial = false) {
   if (!HAS_STRIPE) {
     console.warn("Stripe not configured — add VITE_STRIPE_PRICE_ID_MONTHLY to env vars");
     return { error: "Stripe not configured" };
@@ -30,7 +34,7 @@ export async function redirectToCheckout(userId, email, plan = "monthly") {
     const res = await fetch("/api/create-checkout-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, email, priceId, plan }),
+      body: JSON.stringify({ userId, email, priceId, plan, withTrial }),
     });
 
     const data = await res.json();
