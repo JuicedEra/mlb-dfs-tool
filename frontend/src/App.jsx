@@ -9,13 +9,14 @@ import PickTracker from "./components/tools/PickTracker";
 import Backtester from "./components/tools/Backtester";
 import ABSTracker from "./components/tools/ABSTracker";
 import StreamerFinder from "./components/tools/StreamerFinder";
+import ProfilePage from "./components/tools/ProfilePage";
 import AuthModal from "./components/shared/AuthModal";
 import { fetchMLBEvents } from "./utils/propLinesApi";
 import { HAS_STRIPE, redirectToCheckout } from "./utils/stripe";
 import { fetchGames, fetchRoster, fetchGameLog, computeSplit, fetchPitcherStats, fetchLiveBoxscoreStats, PARK_FACTORS, computeHitScore, headshot } from "./utils/mlbApi";
 import "./styles/global.css";
 
-const PRO_TOOLS = new Set(["pitchers", "statcast", "backtest", "abs", "streamer"]);
+const PRO_TOOLS = new Set(["pitchers", "statcast", "abs", "streamer"]);
 
 const NAV = [
   { section: "Today", items: [
@@ -28,10 +29,11 @@ const NAV = [
   { section: "Reference", items: [
     { id: "parks",    label: "Park Factors",    icon: "stadium" },
     { id: "statcast", label: "Statcast",        icon: "speed",              pro: true },
-    { id: "backtest", label: "Backtester",      icon: "science",            pro: true },
+    { id: "backtest", label: "Backtester",      icon: "science" },
   ]},
   { section: "My Account", items: [
-    { id: "tracker",  label: "My Pick Record",  icon: "assignment_turned_in" },
+    { id: "profile",  label: "My Profile",       icon: "emoji_events" },
+    { id: "tracker",  label: "My Pick Record",   icon: "assignment_turned_in" },
     { id: "settings", label: "Account Settings", icon: "settings" },
   ]}
 ];
@@ -268,6 +270,7 @@ export default function App() {
             {activeTool === "parks"    && <ParkFactors />}
             {activeTool === "statcast" && <StatcastTool />}
             {activeTool === "backtest" && <Backtester isPremium={isPremium} onUpgrade={handleUpgrade} />}
+            {activeTool === "profile"  && <ProfilePage isPremium={isPremium} />}
             {activeTool === "tracker"  && <PickTracker />}
             {activeTool === "settings" && <AccountSettings isPremium={isPremium} onUpgrade={handleUpgrade} />}
           </main>
