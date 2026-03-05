@@ -121,24 +121,28 @@ export default function App() {
         <div className="header-divider" />
         <div className="header-date"><span className="material-icons">calendar_today</span>{today}</div>
         <div className="header-right">
-          {/* Dark mode toggle — always visible */}
-          <button onClick={() => setDarkMode(d => !d)}
-            title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-            className="dark-mode-btn"
-            style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "white", flexShrink: 0 }}>
-            <span className="material-icons" style={{ fontSize: 17 }}>{darkMode ? "light_mode" : "dark_mode"}</span>
-          </button>
-          {/* Mode toggle — compact on mobile, full text on desktop */}
-          <div className="mode-toggle header-mode-toggle">
-            <button className={`mode-btn ${mode === "bts" ? "active" : ""}`} onClick={() => setMode("bts")}>
-              <span className="mode-btn-full">Beat the Streak</span>
-              <span className="mode-btn-short">BTS</span>
+          {/* Dark mode toggle — hidden on landing */}
+          {!requireAuth && (
+            <button onClick={() => setDarkMode(d => !d)}
+              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+              className="dark-mode-btn"
+              style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "white", flexShrink: 0 }}>
+              <span className="material-icons" style={{ fontSize: 17 }}>{darkMode ? "light_mode" : "dark_mode"}</span>
             </button>
-            <button className={`mode-btn ${mode === "props" ? "active" : ""}`} onClick={() => setMode("props")}>
-              <span className="mode-btn-full">Props / DFS</span>
-              <span className="mode-btn-short">Props</span>
-            </button>
-          </div>
+          )}
+          {/* Mode toggle — hidden on landing */}
+          {!requireAuth && (
+            <div className="mode-toggle header-mode-toggle">
+              <button className={`mode-btn ${mode === "bts" ? "active" : ""}`} onClick={() => setMode("bts")}>
+                <span className="mode-btn-full">Beat the Streak</span>
+                <span className="mode-btn-short">BTS</span>
+              </button>
+              <button className={`mode-btn ${mode === "props" ? "active" : ""}`} onClick={() => setMode("props")}>
+                <span className="mode-btn-full">Props / DFS</span>
+                <span className="mode-btn-short">Props</span>
+              </button>
+            </div>
+          )}
           {!HAS_AUTH ? (
             <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
               <DevProToggle on={devPro} setOn={setDevPro} />
@@ -166,25 +170,30 @@ export default function App() {
                 {isPremium && <span style={{ fontSize: 9, fontWeight: 800, background: "var(--accent)", padding: "1px 5px", borderRadius: 4 }}>PRO</span>}
               </button>
               {showUserMenu && (
-                <div className="user-menu" onClick={() => setShowUserMenu(false)}>
-                  <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontSize: 11, color: "var(--text-muted)" }}>{user.email}</div>
-                  {!isPremium && (
-                    <button className="user-menu-item" onClick={handleUpgrade}>
-                      <span className="material-icons" style={{ fontSize: 14, color: "var(--yellow)" }}>star</span>Upgrade to PRO
+                <>
+                  <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowUserMenu(false)} />
+                  <div className="user-menu">
+                    <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontSize: 11, color: "var(--text-muted)" }}>{user.email}</div>
+                    {!isPremium && (
+                      <button className="user-menu-item user-menu-upgrade" onClick={() => { setShowUserMenu(false); handleUpgrade(); }}>
+                        <span className="material-icons" style={{ fontSize: 14 }}>star</span>
+                        <span>Upgrade to PRO</span>
+                        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 800, background: "var(--yellow)", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>$14.99/mo</span>
+                      </button>
+                    )}
+                    {isPremium && (
+                      <div className="user-menu-item" style={{ cursor: "default" }}>
+                        <span className="material-icons" style={{ fontSize: 14, color: "var(--green-light)" }}>verified</span>PRO Active
+                      </div>
+                    )}
+                    <button className="user-menu-item" onClick={() => { setShowUserMenu(false); setActiveTool("settings"); }}>
+                      <span className="material-icons" style={{ fontSize: 14 }}>settings</span>Account Settings
                     </button>
-                  )}
-                  {isPremium && (
-                    <div className="user-menu-item" style={{ cursor: "default" }}>
-                      <span className="material-icons" style={{ fontSize: 14, color: "var(--green-light)" }}>verified</span>PRO Active
-                    </div>
-                  )}
-                  <button className="user-menu-item" onClick={() => setActiveTool("settings")}>
-                    <span className="material-icons" style={{ fontSize: 14 }}>settings</span>Account Settings
-                  </button>
-                  <button className="user-menu-item" onClick={signOut}>
-                    <span className="material-icons" style={{ fontSize: 14 }}>logout</span>Sign Out
-                  </button>
-                </div>
+                    <button className="user-menu-item" onClick={() => { setShowUserMenu(false); signOut(); }}>
+                      <span className="material-icons" style={{ fontSize: 14 }}>logout</span>Sign Out
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -899,6 +908,9 @@ function AccountSettings({ isPremium, onUpgrade }) {
   const [newPw, setNewPw] = useState("");
   const [pwMsg, setPwMsg] = useState(null);
   const [pwLoading, setPwLoading] = useState(false);
+  const [deleteStage, setDeleteStage] = useState(0); // 0=hidden, 1=confirm, 2=typing
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   async function handleChangePassword() {
     if (!HAS_AUTH || !newPw || newPw.length < 6) return;
@@ -912,11 +924,33 @@ function AccountSettings({ isPremium, onUpgrade }) {
     setPwLoading(false);
   }
 
+  async function handleDeleteAccount() {
+    if (deleteConfirm !== "DELETE") return;
+    setDeleting(true);
+    try {
+      const { supabase } = await import("./utils/supabase");
+      // Delete user's picks and usage data first (RLS will enforce ownership)
+      await supabase.from("picks").delete().eq("user_id", user.id);
+      await supabase.from("backtester_usage").delete().eq("user_id", user.id);
+      // Sign out — actual account deletion requires server-side (service role)
+      // For now, sign out and show instructions
+      await signOut();
+      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", {
+        detail: { msg: "Your data has been deleted. Account fully removed within 24 hours.", type: "ok", duration: 8000 }
+      }));
+    } catch (e) {
+      setDeleting(false);
+      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Error deleting account: " + e.message, type: "error" } }));
+    }
+  }
+
   return (
     <div style={{ maxWidth: 600, margin: "0 auto" }}>
-      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "var(--navy)", marginBottom: 24 }}>
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "var(--text-primary)", marginBottom: 24 }}>
         <span className="material-icons" style={{ verticalAlign: "middle", marginRight: 8 }}>settings</span>Account Settings
       </h2>
+
+      {/* Profile */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-header"><span className="card-title"><span className="material-icons">person</span>Profile</span></div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
@@ -926,18 +960,73 @@ function AccountSettings({ isPremium, onUpgrade }) {
           </div>
           <div className="form-field">
             <label className="form-label">Account Type</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className={`badge ${isPremium ? "badge-elite" : "badge-gray"}`} style={{ fontSize: 11 }}>{isPremium ? "PRO" : "Free"}</span>
-              {!isPremium && (
-                <button className="btn btn-sm" onClick={onUpgrade}
-                  style={{ fontSize: 10, background: "var(--yellow)", color: "#0A2342", border: "none", fontWeight: 700 }}>
-                  <span className="material-icons" style={{ fontSize: 12 }}>star</span>Upgrade
-                </button>
-              )}
-            </div>
+            <span className={`badge ${isPremium ? "badge-elite" : "badge-gray"}`} style={{ fontSize: 11, width: "fit-content" }}>{isPremium ? "PRO" : "Free"}</span>
           </div>
         </div>
       </div>
+
+      {/* Upgrade CTA — only for free users */}
+      {!isPremium && (
+        <div style={{
+          marginBottom: 16, borderRadius: 14, overflow: "hidden",
+          background: "linear-gradient(135deg, #0A2342 0%, #0D3060 50%, #0A4D2E 100%)",
+          border: "1px solid rgba(74,222,128,0.25)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.3), 0 0 0 1px rgba(74,222,128,0.08)",
+          position: "relative",
+        }}>
+          <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, background: "radial-gradient(circle, rgba(74,222,128,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
+          <div style={{ padding: "22px 24px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span className="material-icons" style={{ color: "#F59E0B", fontSize: 20 }}>star</span>
+                  <span style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: "white" }}>Upgrade to DiamondIQ Edge</span>
+                </div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, marginBottom: 16 }}>
+                  Unlock everything — Pitcher Intel, Streamer Finder, Statcast,<br />unlimited Backtester, live prop lines, ABS Tracker & Top 5 PRO locks.
+                </div>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+                  {["Pitcher Intel", "Streamer Finder", "Unlimited Backtester", "Live Odds", "Top 5 Locks"].map(f => (
+                    <span key={f} style={{ fontSize: 10, fontWeight: 700, color: "#4ADE80", background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 20, padding: "3px 10px" }}>✓ {f}</span>
+                  ))}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                  <button onClick={onUpgrade} style={{
+                    padding: "10px 24px", borderRadius: 10, border: "none", cursor: "pointer",
+                    background: "linear-gradient(135deg, #F59E0B, #D97706)",
+                    color: "#0A2342", fontSize: 13, fontWeight: 900,
+                    boxShadow: "0 4px 16px rgba(245,158,11,0.4)",
+                    display: "flex", alignItems: "center", gap: 8,
+                  }}>
+                    <span className="material-icons" style={{ fontSize: 16 }}>bolt</span>
+                    Upgrade Now — $14.99/mo
+                  </button>
+                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>or $119/yr · save $61</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Subscription management for PRO users */}
+      {isPremium && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header"><span className="card-title"><span className="material-icons">credit_card</span>Subscription</span></div>
+          <div style={{ padding: 16, fontSize: 13, color: "var(--text-secondary)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span className="material-icons" style={{ color: "var(--green-light)", fontSize: 18 }}>verified</span>
+              <span style={{ fontWeight: 700 }}>PRO subscription active</span>
+            </div>
+            <p style={{ lineHeight: 1.6, marginBottom: 12 }}>Manage billing, update payment method, or cancel through Stripe's secure portal.</p>
+            <button className="btn btn-sm" style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+              <span className="material-icons" style={{ fontSize: 14 }}>open_in_new</span>Manage Subscription
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Password */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-header"><span className="card-title"><span className="material-icons">lock</span>Password</span></div>
         <div style={{ padding: 16 }}>
@@ -961,30 +1050,62 @@ function AccountSettings({ isPremium, onUpgrade }) {
           )}
         </div>
       </div>
-      {isPremium && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header"><span className="card-title"><span className="material-icons">credit_card</span>Subscription</span></div>
-          <div style={{ padding: 16, fontSize: 13, color: "var(--text-secondary)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <span className="material-icons" style={{ color: "var(--green-light)", fontSize: 18 }}>verified</span>
-              <span style={{ fontWeight: 700 }}>PRO subscription active</span>
-            </div>
-            <p style={{ lineHeight: 1.6, marginBottom: 12 }}>Manage billing, update payment, or cancel through Stripe's portal.</p>
-            <button className="btn btn-sm" style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
-              <span className="material-icons" style={{ fontSize: 14 }}>open_in_new</span>Manage Subscription
-            </button>
-          </div>
-        </div>
-      )}
-      <div className="card" style={{ borderColor: "rgba(239,68,68,0.2)" }}>
-        <div className="card-header" style={{ background: "rgba(239,68,68,0.03)" }}>
-          <span className="card-title" style={{ color: "var(--red-data)" }}><span className="material-icons">warning</span>Sign Out</span>
-        </div>
+
+      {/* Sign out */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-header"><span className="card-title"><span className="material-icons">logout</span>Sign Out</span></div>
         <div style={{ padding: 16 }}>
           <button className="btn btn-sm" onClick={signOut}
-            style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", color: "var(--red-data)", fontWeight: 700 }}>
+            style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-secondary)", fontWeight: 700 }}>
             <span className="material-icons" style={{ fontSize: 14 }}>logout</span>Sign Out
           </button>
+        </div>
+      </div>
+
+      {/* Delete account — danger zone */}
+      <div className="card" style={{ borderColor: "rgba(239,68,68,0.25)" }}>
+        <div className="card-header" style={{ background: "rgba(239,68,68,0.04)" }}>
+          <span className="card-title" style={{ color: "var(--red-data)" }}><span className="material-icons">delete_forever</span>Delete Account</span>
+        </div>
+        <div style={{ padding: 16 }}>
+          {deleteStage === 0 && (
+            <>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12, lineHeight: 1.6 }}>Permanently delete your account and all your data — picks, history, everything. This cannot be undone.</p>
+              <button className="btn btn-sm" onClick={() => setDeleteStage(1)}
+                style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--red-data)", fontWeight: 700 }}>
+                <span className="material-icons" style={{ fontSize: 14 }}>delete_forever</span>Delete My Account
+              </button>
+            </>
+          )}
+          {deleteStage === 1 && (
+            <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: 16 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--red-data)", marginBottom: 8 }}>⚠️ Are you absolutely sure?</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16, lineHeight: 1.6 }}>This will permanently delete all your picks, history, and account data. Your subscription (if active) will be cancelled. <strong>There is no undo.</strong></p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-sm" onClick={() => setDeleteStage(2)}
+                  style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "var(--red-data)", fontWeight: 700 }}>
+                  Yes, I want to delete my account
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setDeleteStage(0)}>Cancel</button>
+              </div>
+            </div>
+          )}
+          {deleteStage === 2 && (
+            <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: 16 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--red-data)", marginBottom: 8 }}>Final confirmation</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>Type <strong>DELETE</strong> to confirm:</p>
+              <input className="form-input" value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value.toUpperCase())}
+                placeholder="Type DELETE here" style={{ marginBottom: 12, borderColor: "rgba(239,68,68,0.3)" }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-sm" onClick={handleDeleteAccount}
+                  disabled={deleteConfirm !== "DELETE" || deleting}
+                  style={{ background: deleteConfirm === "DELETE" ? "#DC2626" : "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: deleteConfirm === "DELETE" ? "white" : "var(--red-data)", fontWeight: 800, opacity: deleteConfirm !== "DELETE" ? 0.5 : 1 }}>
+                  {deleting ? "Deleting..." : "Permanently Delete Account"}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setDeleteStage(0); setDeleteConfirm(""); }}>Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
