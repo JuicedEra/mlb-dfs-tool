@@ -82,6 +82,7 @@ export default function App() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showProWelcome, setShowProWelcome] = useState(false);
+  const [showReset, setShowReset] = useState(false);
 
   const { user, isPremium: authPremium, HAS_AUTH, signOut, loading: authLoading, justVerified } = useAuth();
   const [devPro, setDevPro] = useState(false);
@@ -91,12 +92,16 @@ export default function App() {
   const isDevProByEmail = DEV_PRO_EMAILS.includes(user?.email);
   const isPremium = isDevProByEmail || (HAS_AUTH ? authPremium : devPro);
 
-  // Handle return from Stripe checkout
+  // Handle return from Stripe checkout and password reset
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("upgraded") === "true") {
       window.history.replaceState({}, "", window.location.pathname);
       setShowProWelcome(true);
+    }
+    if (params.get("reset") === "1") {
+      window.history.replaceState({}, "", window.location.pathname);
+      setShowReset(true);
     }
   }, []);
   useEffect(() => {
@@ -203,7 +208,7 @@ export default function App() {
               <button onClick={() => setShowUserMenu(v => !v)}
                 style={{ display: "flex", alignItems: "center", gap: 6, background: isPremium ? "rgba(245,158,11,0.1)" : "none", border: isPremium ? "1.5px solid rgba(245,158,11,0.5)" : "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: "white", fontSize: 11, boxShadow: isPremium ? "0 0 10px rgba(245,158,11,0.15)" : "none" }}>
                 <span className="material-icons" style={{ fontSize: 16, color: isPremium ? "#F59E0B" : "white" }}>{isPremium ? "stars" : "account_circle"}</span>
-                <span style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {user.user_metadata?.full_name || user.email?.split("@")[0] || "Account"}
                 </span>
                 {isPremium && <span style={{ fontSize: 8, fontWeight: 900, background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>PRO</span>}
@@ -319,6 +324,7 @@ export default function App() {
       {showAuth && <AuthModal mode={authMode} onClose={() => setShowAuth(false)} />}
       {showUpgrade && <UpgradeModal onUpgrade={handleUpgrade} onClose={() => setShowUpgrade(false)} isPremium={isPremium} />}
       {showProWelcome && <ProWelcomeModal user={user} onClose={() => setShowProWelcome(false)} />}
+      {showReset && <ResetPasswordModal onClose={() => setShowReset(false)} />}
     </div>
   );
 }
@@ -1115,7 +1121,10 @@ function AccountSettings({ isPremium, onUpgrade }) {
 
   async function handleManageSubscription() {
     const customerId = user?.user_metadata?.stripe_customer_id;
-    if (!customerId) return;
+    if (!customerId) {
+      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Billing portal unavailable — please contact support at " + CONTACT_EMAIL, type: "error", duration: 6000 } }));
+      return;
+    }
     setPortalLoading(true);
     const { openBillingPortal } = await import("./utils/stripe");
     const { error } = await openBillingPortal(customerId);
@@ -1366,13 +1375,13 @@ function AppFooter() {
           {[
             { label: "Privacy", action: () => setShowPrivacy(true) },
             { label: "Terms", action: () => setShowTerms(true) },
-            { label: "Contact", action: () => window.location.href = `mailto:${CONTACT_EMAIL}` },
           ].map(l => (
             <button key={l.label} onClick={l.action}
               style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: 0 }}>
               {l.label}
             </button>
           ))}
+          <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "var(--text-muted)", fontSize: 11, textDecoration: "none" }}>Contact</a>
         </div>
       </div>
       {showPrivacy && <LegalModal title="Privacy Policy" onClose={() => setShowPrivacy(false)}><PrivacyPolicyContent /></LegalModal>}
@@ -1407,7 +1416,6 @@ function LandingFooter() {
           {[
             { label: "Privacy Policy", action: () => setShowPrivacy(true) },
             { label: "Terms of Service", action: () => setShowTerms(true) },
-            { label: "Contact Us", action: () => window.location.href = `mailto:${CONTACT_EMAIL}` },
           ].map(l => (
             <button key={l.label} onClick={l.action}
               style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", fontSize: 11, cursor: "pointer", padding: 0, transition: "color 0.15s" }}
@@ -1415,6 +1423,13 @@ function LandingFooter() {
               onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.35)"}>
               {l.label}
             </button>
+          ))}
+          <a href={`mailto:${CONTACT_EMAIL}`}
+            style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, textDecoration: "none", transition: "color 0.15s" }}
+            onMouseEnter={e => e.target.style.color = "rgba(255,255,255,0.7)"}
+            onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.35)"}>
+            Contact Us
+          </a>
           ))}
         </div>
       </footer>
@@ -1576,6 +1591,58 @@ function FAQPage({ isPremium, onUpgrade }) {
         <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
           Email us at <a href={"mailto:" + CONTACT_EMAIL} style={{ color: "var(--accent-light)", fontWeight: 600 }}>{CONTACT_EMAIL}</a>. For billing, use Manage Subscription in Account Settings.
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordModal({ onClose }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm]   = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(null);
+  const [done, setDone]         = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (password !== confirm) { setError("Passwords don't match."); return; }
+    if (password.length < 6)  { setError("Password must be at least 6 characters."); return; }
+    setLoading(true); setError(null);
+    const { supabase } = await import("./utils/supabase");
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+    if (err) { setError(err.message); return; }
+    setDone(true);
+    setTimeout(onClose, 2500);
+  }
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 600, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, width: "100%", maxWidth: 380, padding: 32 }}>
+        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 900, color: "var(--text-primary)", margin: "0 0 6px" }}>Set new password</h2>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 24px", lineHeight: 1.6 }}>Choose a new password for your DiamondIQ account.</p>
+
+        {done ? (
+          <div style={{ textAlign: "center", padding: "16px 0" }}>
+            <span className="material-icons" style={{ fontSize: 40, color: "var(--green-light)", display: "block", marginBottom: 12 }}>check_circle</span>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Password updated! Signing you in...</p>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div className="form-field">
+              <label className="form-label">New Password</label>
+              <input type="password" className="form-input" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} placeholder="Min 6 characters" />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Confirm Password</label>
+              <input type="password" className="form-input" value={confirm} onChange={e => setConfirm(e.target.value)} required minLength={6} placeholder="Re-enter password" />
+            </div>
+            {error && <div style={{ fontSize: 12, color: "var(--red-data)", padding: "8px 10px", background: "rgba(239,68,68,0.08)", borderRadius: 6 }}>{error}</div>}
+            <button type="submit" className="btn btn-primary btn-sm" disabled={loading} style={{ width: "100%", justifyContent: "center", padding: "11px 0" }}>
+              {loading ? "Updating..." : "Update Password"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
