@@ -81,6 +81,8 @@ export default function App() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showProWelcome, setShowProWelcome] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("diq_theme") === "dark");
+  const [oddsConnected, setOddsConnected] = useState(null);
 
   const { user, isPremium: authPremium, HAS_AUTH, signOut, loading: authLoading, justVerified } = useAuth();
   const [devPro, setDevPro] = useState(false);
@@ -106,8 +108,6 @@ export default function App() {
       setShowAuth(false);
     }
   }, [justVerified, user]);
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("diq_theme") === "dark");
-  const [oddsConnected, setOddsConnected] = useState(null);
 
   // Apply dark mode theme to document root
   useEffect(() => {
