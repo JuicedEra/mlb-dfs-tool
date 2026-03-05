@@ -103,8 +103,12 @@ export default function App() {
 
   function handleUpgrade(plan = "monthly") {
     if (!user && HAS_AUTH) { setAuthMode("signup"); setShowAuth(true); return; }
-    if (HAS_STRIPE && user) redirectToCheckout(user.id, user.email, plan);
-    else setShowUpgrade(true);
+    if (HAS_STRIPE && user) {
+      redirectToCheckout(user.id, user.email, plan);
+    } else {
+      // Show modal regardless — either Stripe not configured or no user
+      setShowUpgrade(true);
+    }
   }
 
   function handleNavClick(id) {
@@ -876,24 +880,29 @@ function LandingFeatures() {
   );
 }
 function UpgradeModal({ onUpgrade, onClose, isPremium }) {
-  const [selectedPlan, setSelectedPlan] = useState("annual"); // default to annual — better value
+  const { user } = useAuth();
+  const [selectedPlan, setSelectedPlan] = useState("annual");
   const [loading, setLoading] = useState(false);
 
   if (isPremium) return null;
 
   const features = [
-    { icon: "auto_awesome",  label: "Top 5 PRO locks daily" },
+    { icon: "auto_awesome",   label: "Top 5 PRO locks daily" },
     { icon: "sports_baseball", label: "Pitcher Intel & matchup data" },
-    { icon: "query_stats",   label: "Full Statcast metrics (xBA, barrel%, exit velo)" },
-    { icon: "science",       label: "Unlimited Backtester access" },
-    { icon: "gavel",         label: "ABS Challenge Tracker" },
-    { icon: "cloud_download",label: "Fantasy Streamer Finder" },
-    { icon: "trending_up",   label: "Live betting odds & prop lines" },
+    { icon: "query_stats",    label: "Full Statcast metrics (xBA, barrel%, exit velo)" },
+    { icon: "science",        label: "Unlimited Backtester access" },
+    { icon: "gavel",          label: "ABS Challenge Tracker" },
+    { icon: "cloud_download", label: "Fantasy Streamer Finder" },
+    { icon: "trending_up",    label: "Live betting odds & prop lines" },
   ];
 
   async function handleCheckout() {
     setLoading(true);
-    await onUpgrade(selectedPlan);
+    if (HAS_STRIPE && user) {
+      await redirectToCheckout(user.id, user.email, selectedPlan);
+    } else {
+      onUpgrade(selectedPlan);
+    }
     setLoading(false);
     onClose();
   }
