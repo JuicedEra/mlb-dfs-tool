@@ -17,6 +17,7 @@ import { fetchGames, fetchRoster, fetchGameLog, computeSplit, fetchPitcherStats,
 import "./styles/global.css";
 
 const PRO_TOOLS = new Set(["pitchers", "statcast", "abs", "streamer"]);
+const CONTACT_EMAIL = "diamondiqinfo@gmail.com";
 
 const NAV = [
   { section: "Today", items: [
@@ -80,6 +81,7 @@ export default function App() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showProWelcome, setShowProWelcome] = useState(false);
 
   const { user, isPremium: authPremium, HAS_AUTH, signOut, loading: authLoading, justVerified } = useAuth();
   const [devPro, setDevPro] = useState(false);
@@ -94,9 +96,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("upgraded") === "true") {
       window.history.replaceState({}, "", window.location.pathname);
-      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", {
-        detail: { msg: "🎉 Welcome to DiamondIQ Edge! Your 7-day free trial is now active — enjoy full PRO access!", type: "ok", duration: 8000 }
-      }));
+      setShowProWelcome(true);
     }
   }, []);
   useEffect(() => {
@@ -121,13 +121,6 @@ export default function App() {
     fetchMLBEvents().then(events => {
       setOddsConnected(Array.isArray(events) && events.length >= 0);
     }).catch(() => setOddsConnected(false));
-  }, []);
-
-  // Handle footer nav events (e.g. FAQ link from AppFooter)
-  useEffect(() => {
-    function handleNav(e) { setActiveTool(e.detail); }
-    window.addEventListener("diamondiq:navigate", handleNav);
-    return () => window.removeEventListener("diamondiq:navigate", handleNav);
   }, []);
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
@@ -211,12 +204,12 @@ export default function App() {
           ) : (
             <div style={{ position: "relative", marginLeft: 8 }}>
               <button onClick={() => setShowUserMenu(v => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: "white", fontSize: 11 }}>
-                <span className="material-icons" style={{ fontSize: 16 }}>account_circle</span>
+                style={{ display: "flex", alignItems: "center", gap: 6, background: isPremium ? "rgba(245,158,11,0.1)" : "none", border: isPremium ? "1.5px solid rgba(245,158,11,0.5)" : "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: "white", fontSize: 11, boxShadow: isPremium ? "0 0 10px rgba(245,158,11,0.15)" : "none" }}>
+                <span className="material-icons" style={{ fontSize: 16, color: isPremium ? "#F59E0B" : "white" }}>{isPremium ? "stars" : "account_circle"}</span>
                 <span style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {user.user_metadata?.full_name || user.email?.split("@")[0] || "Account"}
                 </span>
-                {isPremium && <span style={{ fontSize: 9, fontWeight: 800, background: "var(--accent)", padding: "1px 5px", borderRadius: 4 }}>PRO</span>}
+                {isPremium && <span style={{ fontSize: 8, fontWeight: 900, background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>EDGE</span>}
               </button>
               {showUserMenu && (
                 <>
@@ -328,6 +321,7 @@ export default function App() {
       )}
       {showAuth && <AuthModal mode={authMode} onClose={() => setShowAuth(false)} />}
       {showUpgrade && <UpgradeModal onUpgrade={handleUpgrade} onClose={() => setShowUpgrade(false)} isPremium={isPremium} />}
+      {showProWelcome && <ProWelcomeModal user={user} onClose={() => setShowProWelcome(false)} />}
     </div>
   );
 }
@@ -965,187 +959,6 @@ function LandingFeatures() {
     </div>
   );
 }
-const FAQ_ITEMS = [
-  {
-    q: "Is DiamondIQ really free?",
-    a: "Yes. Creating an account is completely free — no credit card required. Free accounts get access to Today's Picks rankings, Player Research, Park Factors, Pick Tracker, and Backtester. PRO tools are locked behind the Edge subscription.",
-  },
-  {
-    q: "What's included in the 7-day free trial?",
-    a: "The trial gives you full access to every PRO feature — Pitcher Intel, Statcast metrics, Streamer Finder, ABS Challenge Tracker, live prop lines and odds, and the Top 5 daily locks. Everything. No restrictions.",
-  },
-  {
-    q: "Do I need a credit card for the free trial?",
-    a: "Yes — a card is required to start the trial so Stripe can auto-convert to a paid subscription after 7 days. You won't be charged anything today. If you cancel before the 7 days are up, you pay nothing.",
-  },
-  {
-    q: "What happens when the trial ends?",
-    a: "After 7 days your card is automatically charged — $14.99/month or $119/year depending on the plan you chose. You'll receive an email reminder before the trial ends. If you cancel during the trial, you keep full PRO access until the 7 days are up, then revert to the free plan.",
-  },
-  {
-    q: "Can I cancel anytime?",
-    a: "Yes, cancel anytime with no penalty. Go to Account Settings → Manage Subscription to cancel through Stripe's secure portal. Your PRO access continues until the end of the current billing period.",
-  },
-  {
-    q: "Can I use the free trial more than once?",
-    a: "No — the 7-day trial is available once per account. If you cancel and re-subscribe later, you'll be charged from day one. Using a different payment method on the same account does not reset the trial.",
-  },
-  {
-    q: "What is the Hit Score?",
-    a: "The Hit Score is DiamondIQ's proprietary rating for every MLB hitter on a given day. It combines recent form (last 3, 7, and 15 game splits), batter vs pitcher history, Statcast contact quality metrics, park factors, and platoon splits into a single number. Higher = better chance of getting a hit that day.",
-  },
-  {
-    q: "What's the difference between BTS mode and Props/DFS mode?",
-    a: "Beat the Streak mode ranks hitters prioritizing safety and consistency — it surfaces the players most likely to get at least one hit. Props/DFS mode ranks by ceiling and value, showing the full pool with tier breakdowns for total bases, RBI props, and lineup optimization.",
-  },
-  {
-    q: "How current is the data?",
-    a: "Lineups and rankings update live as confirmed lineups are posted each day — typically 3-4 hours before first pitch. Statcast and historical split data refreshes daily. Live prop lines and odds update in real time via our odds feed.",
-  },
-  {
-    q: "Is this for Beat the Streak only?",
-    a: "No — DiamondIQ works for Beat the Streak, MLB player props, daily fantasy (DFS), and anyone who wants data-driven insights on hitter performance. The BTS and Props/DFS modes let you switch context instantly.",
-  },
-  {
-    q: "How do I get support?",
-    a: `Email us at ${CONTACT_EMAIL} and we'll get back to you as soon as possible. For billing issues, you can also manage your subscription directly through the Stripe portal in Account Settings.`,
-  },
-];
-
-function LandingFAQ() {
-  const [open, setOpen] = useState(null);
-  return (
-    <div style={{ background: 'white', padding: 'clamp(40px, 5vw, 64px) clamp(16px, 4vw, 48px)' }}>
-      <div style={{ maxWidth: 800, margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '2.5px', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 8 }}>Got questions?</div>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(22px, 3vw, 32px)', fontWeight: 900, color: 'var(--navy)', margin: '0 0 12px' }}>
-            Frequently Asked Questions
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-            Everything you need to know about DiamondIQ.
-          </p>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {FAQ_ITEMS.map((item, i) => (
-            <div key={i} style={{
-              border: `1px solid ${open === i ? 'rgba(10,110,75,0.3)' : 'var(--border)'}`,
-              borderRadius: 12, overflow: 'hidden',
-              background: open === i ? 'rgba(10,110,75,0.03)' : 'white',
-              transition: 'all 0.15s',
-            }}>
-              <button onClick={() => setOpen(open === i ? null : i)}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer',
-                  textAlign: 'left', gap: 12,
-                }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy)', lineHeight: 1.4 }}>{item.q}</span>
-                <span className="material-icons" style={{ fontSize: 18, color: 'var(--accent)', flexShrink: 0, transition: 'transform 0.15s', transform: open === i ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                  expand_more
-                </span>
-              </button>
-              {open === i && (
-                <div style={{ padding: '0 18px 16px', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.75 }}>
-                  {item.a}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FAQPage({ isPremium, onUpgrade }) {
-  const [open, setOpen] = useState(null);
-  return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: 'clamp(24px, 3vw, 40px) clamp(16px, 3vw, 32px)' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(10,110,75,0.1)', border: '1px solid rgba(10,110,75,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span className="material-icons" style={{ fontSize: 18, color: 'var(--accent)' }}>help_outline</span>
-          </div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>Help & FAQ</h1>
-        </div>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, lineHeight: 1.6 }}>
-          Answers to common questions about DiamondIQ, the free trial, and your subscription.
-        </p>
-      </div>
-
-      {/* FAQ accordion */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 32 }}>
-        {FAQ_ITEMS.map((item, i) => (
-          <div key={i} style={{
-            border: `1px solid ${open === i ? 'rgba(10,110,75,0.3)' : 'var(--border)'}`,
-            borderRadius: 12, overflow: 'hidden',
-            background: open === i ? 'rgba(10,110,75,0.04)' : 'var(--surface)',
-            transition: 'all 0.15s',
-          }}>
-            <button onClick={() => setOpen(open === i ? null : i)}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer',
-                textAlign: 'left', gap: 12,
-              }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.4 }}>{item.q}</span>
-              <span className="material-icons" style={{ fontSize: 18, color: 'var(--accent)', flexShrink: 0, transition: 'transform 0.15s', transform: open === i ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                expand_more
-              </span>
-            </button>
-            {open === i && (
-              <div style={{ padding: '0 18px 16px', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.75 }}>
-                {item.a}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Upgrade CTA for free users */}
-      {!isPremium && (
-        <div style={{
-          borderRadius: 14, padding: '24px 28px',
-          background: 'linear-gradient(135deg, #000F2B, #001A45)',
-          border: '1px solid rgba(74,222,128,0.18)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 20, flexWrap: 'wrap', marginBottom: 24,
-        }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 900, color: 'white', marginBottom: 4 }}>
-              Still have questions? Try PRO free for 7 days.
-            </div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>
-              Full access to every feature. No charge today. Cancel anytime.
-            </div>
-          </div>
-          <button onClick={onUpgrade} style={{
-            padding: '10px 22px', borderRadius: 10, border: 'none', cursor: 'pointer',
-            background: 'linear-gradient(135deg, #F59E0B, #D97706)',
-            color: '#0A2342', fontSize: 13, fontWeight: 900, whiteSpace: 'nowrap', flexShrink: 0,
-          }}>
-            Start Free Trial
-          </button>
-        </div>
-      )}
-
-      {/* Contact */}
-      <div style={{ padding: '20px 24px', borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-          <span className="material-icons" style={{ fontSize: 15, verticalAlign: 'middle', marginRight: 6, color: 'var(--accent)' }}>mail</span>
-          Still need help?
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-          Email us at <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: 'var(--accent-light)', fontWeight: 600 }}>{CONTACT_EMAIL}</a> and we'll get back to you as soon as possible.
-          For billing and subscription management, use the Manage Subscription button in Account Settings.
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function UpgradeModal({ onUpgrade, onClose, isPremium }) {
   const { user } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState("annual");
@@ -1544,8 +1357,6 @@ function AccountSettings({ isPremium, onUpgrade }) {
   );
 }
 
-const CONTACT_EMAIL = "diamondiqinfo@gmail.com";
-
 function AppFooter() {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -1558,7 +1369,6 @@ function AppFooter() {
           {[
             { label: "Privacy", action: () => setShowPrivacy(true) },
             { label: "Terms", action: () => setShowTerms(true) },
-            { label: "FAQ", action: () => { const event = new CustomEvent("diamondiq:navigate", { detail: "faq" }); window.dispatchEvent(event); } },
             { label: "Contact", action: () => window.open(`mailto:${CONTACT_EMAIL}`) },
           ].map(l => (
             <button key={l.label} onClick={l.action}
@@ -1600,7 +1410,6 @@ function LandingFooter() {
           {[
             { label: "Privacy Policy", action: () => setShowPrivacy(true) },
             { label: "Terms of Service", action: () => setShowTerms(true) },
-            { label: "FAQ", action: () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }) },
             { label: "Contact Us", action: () => window.open(`mailto:${CONTACT_EMAIL}`) },
           ].map(l => (
             <button key={l.label} onClick={l.action}
@@ -1687,5 +1496,156 @@ function DevLandingToggle({ on, setOn }) {
       title="Preview landing page">
       {on ? "LANDING ✓" : "LANDING"} (dev)
     </button>
+  );
+}
+
+// ─── FAQ DATA & COMPONENTS ────────────────────────────────────────────────────
+
+const FAQ_ITEMS = [
+  { q: "Is DiamondIQ really free?", a: "Yes. Creating an account is completely free — no credit card required. Free accounts get access to Today's Picks rankings, Player Research, Park Factors, Pick Tracker, and Backtester. PRO tools are locked behind the Edge subscription." },
+  { q: "What's included in the 7-day free trial?", a: "The trial gives you full access to every PRO feature — Pitcher Intel, Statcast metrics, Streamer Finder, ABS Challenge Tracker, live prop lines and odds, and the Top 5 daily locks. Everything. No restrictions." },
+  { q: "Do I need a credit card for the free trial?", a: "Yes — a card is required to start the trial so Stripe can auto-convert to a paid subscription after 7 days. You won't be charged anything today. If you cancel before the 7 days are up, you pay nothing." },
+  { q: "What happens when the trial ends?", a: "After 7 days your card is automatically charged — $14.99/month or $119/year depending on the plan you chose. You'll receive an email reminder before the trial ends. If you cancel during the trial, you keep full PRO access until the 7 days are up, then revert to the free plan." },
+  { q: "Can I cancel anytime?", a: "Yes, cancel anytime with no penalty. Go to Account Settings → Manage Subscription to cancel through Stripe's secure portal. Your PRO access continues until the end of the current billing period." },
+  { q: "Can I use the free trial more than once?", a: "No — the 7-day trial is available once per account. If you cancel and re-subscribe later, you'll be charged from day one." },
+  { q: "What is the Hit Score?", a: "The Hit Score is DiamondIQ's proprietary rating for every MLB hitter on a given day. It combines recent form, batter vs pitcher history, Statcast contact quality metrics, park factors, and platoon splits into a single number. Higher = better chance of getting a hit that day." },
+  { q: "What's the difference between BTS mode and Props/DFS mode?", a: "Beat the Streak mode ranks hitters prioritizing safety and consistency. Props/DFS mode ranks by ceiling and value, showing the full pool with tier breakdowns for total bases, RBI props, and lineup optimization." },
+  { q: "How current is the data?", a: "Lineups and rankings update live as confirmed lineups are posted each day — typically 3-4 hours before first pitch. Statcast and historical split data refreshes daily. Live prop lines and odds update in real time via our odds feed." },
+  { q: "Is this for Beat the Streak only?", a: "No — DiamondIQ works for Beat the Streak, MLB player props, daily fantasy (DFS), and anyone who wants data-driven insights on hitter performance." },
+  { q: "How do I get support?", a: "Email us at " + CONTACT_EMAIL + " and we'll get back to you as soon as possible. For billing issues, you can manage your subscription directly through the Stripe portal in Account Settings." },
+];
+
+function LandingFAQ() {
+  const [open, setOpen] = useState(null);
+  return (
+    <div style={{ background: "white", padding: "clamp(40px, 5vw, 64px) clamp(16px, 4vw, 48px)" }}>
+      <div style={{ maxWidth: 800, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "2.5px", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8 }}>Got questions?</div>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(22px, 3vw, 32px)", fontWeight: 900, color: "var(--navy)", margin: "0 0 12px" }}>Frequently Asked Questions</h2>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Everything you need to know about DiamondIQ.</p>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {FAQ_ITEMS.map((item, i) => (
+            <div key={i} style={{ border: "1px solid " + (open === i ? "rgba(10,110,75,0.3)" : "var(--border)"), borderRadius: 12, overflow: "hidden", background: open === i ? "rgba(10,110,75,0.03)" : "white" }}>
+              <button onClick={() => setOpen(open === i ? null : i)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", background: "none", border: "none", cursor: "pointer", textAlign: "left", gap: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--navy)", lineHeight: 1.4 }}>{item.q}</span>
+                <span className="material-icons" style={{ fontSize: 18, color: "var(--accent)", flexShrink: 0, transition: "transform 0.15s", transform: open === i ? "rotate(180deg)" : "rotate(0deg)" }}>expand_more</span>
+              </button>
+              {open === i && <div style={{ padding: "0 18px 16px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.75 }}>{item.a}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FAQPage({ isPremium, onUpgrade }) {
+  const [open, setOpen] = useState(null);
+  return (
+    <div style={{ maxWidth: 800, margin: "0 auto", padding: "clamp(24px, 3vw, 40px) clamp(16px, 3vw, 32px)" }}>
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(10,110,75,0.1)", border: "1px solid rgba(10,110,75,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span className="material-icons" style={{ fontSize: 18, color: "var(--accent)" }}>help_outline</span>
+          </div>
+          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 900, color: "var(--text-primary)", margin: 0 }}>Help & FAQ</h1>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>Answers to common questions about DiamondIQ, the free trial, and your subscription.</p>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 32 }}>
+        {FAQ_ITEMS.map((item, i) => (
+          <div key={i} style={{ border: "1px solid " + (open === i ? "rgba(10,110,75,0.3)" : "var(--border)"), borderRadius: 12, overflow: "hidden", background: open === i ? "rgba(10,110,75,0.04)" : "var(--surface)" }}>
+            <button onClick={() => setOpen(open === i ? null : i)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", background: "none", border: "none", cursor: "pointer", textAlign: "left", gap: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.4 }}>{item.q}</span>
+              <span className="material-icons" style={{ fontSize: 18, color: "var(--accent)", flexShrink: 0, transition: "transform 0.15s", transform: open === i ? "rotate(180deg)" : "rotate(0deg)" }}>expand_more</span>
+            </button>
+            {open === i && <div style={{ padding: "0 18px 16px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.75 }}>{item.a}</div>}
+          </div>
+        ))}
+      </div>
+      {!isPremium && (
+        <div style={{ borderRadius: 14, padding: "24px 28px", background: "linear-gradient(135deg, #000F2B, #001A45)", border: "1px solid rgba(74,222,128,0.18)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap", marginBottom: 24 }}>
+          <div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 900, color: "white", marginBottom: 4 }}>Still have questions? Try PRO free for 7 days.</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Full access to every feature. No charge today. Cancel anytime.</div>
+          </div>
+          <button onClick={onUpgrade} style={{ padding: "10px 22px", borderRadius: 10, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", fontSize: 13, fontWeight: 900, whiteSpace: "nowrap", flexShrink: 0 }}>Start Free Trial</button>
+        </div>
+      )}
+      <div style={{ padding: "20px 24px", borderRadius: 12, background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Still need help?</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+          Email us at <a href={"mailto:" + CONTACT_EMAIL} style={{ color: "var(--accent-light)", fontWeight: 600 }}>{CONTACT_EMAIL}</a>. For billing, use Manage Subscription in Account Settings.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProWelcomeModal({ user, onClose }) {
+  const name = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there";
+  const [visible, setVisible] = useState(true);
+
+  function handleClose() {
+    setVisible(false);
+    setTimeout(onClose, 300);
+  }
+
+  const proFeatures = [
+    { icon: "auto_awesome",    label: "Top 5 PRO Locks",   desc: "Daily high-confidence picks" },
+    { icon: "sports_baseball", label: "Pitcher Intel",      desc: "Hittability scores & matchups" },
+    { icon: "query_stats",     label: "Full Statcast",      desc: "xBA, barrel%, exit velocity" },
+    { icon: "cloud_download",  label: "Streamer Finder",    desc: "Fantasy streaming picks daily" },
+    { icon: "gavel",           label: "ABS Tracker",        desc: "Challenge outcomes by zone" },
+    { icon: "trending_up",     label: "Live Odds & Props",  desc: "Real-time lines cross-referenced" },
+  ];
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 600, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, opacity: visible ? 1 : 0, transition: "opacity 0.3s ease" }}
+      onClick={e => e.target === e.currentTarget && handleClose()}>
+      <div style={{ background: "linear-gradient(160deg, #000F2B 0%, #001A45 50%, #0A2E1A 100%)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 20, width: "100%", maxWidth: 520, boxShadow: "0 24px 60px rgba(0,0,0,0.6)", overflow: "hidden" }}>
+        <div style={{ height: 3, background: "linear-gradient(90deg, transparent, #F59E0B, #D97706, #F59E0B, transparent)" }} />
+        <div style={{ padding: "32px 32px 20px", textAlign: "center", position: "relative" }}>
+          <button onClick={handleClose} style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "rgba(255,255,255,0.5)" }}>
+            <span className="material-icons" style={{ fontSize: 16 }}>close</span>
+          </button>
+          <div style={{ marginBottom: 20 }}><DiamondMark size={72} /></div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 50, padding: "4px 14px", marginBottom: 14 }}>
+            <span className="material-icons" style={{ fontSize: 12, color: "#F59E0B" }}>stars</span>
+            <span style={{ fontSize: 10, fontWeight: 900, color: "#F59E0B", letterSpacing: "1.5px" }}>DIAMONDIQ EDGE</span>
+          </div>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(20px, 4vw, 26px)", fontWeight: 900, color: "white", margin: "0 0 10px", lineHeight: 1.2 }}>
+            Welcome to the Edge, <span style={{ color: "#F59E0B" }}>{name}</span>
+          </h2>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.6 }}>
+            Your 7-day free trial is active. Full PRO access — no restrictions.<br />You won't be charged until your trial ends.
+          </p>
+        </div>
+        <div style={{ padding: "0 28px 20px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {proFeatures.map(f => (
+              <div key={f.label} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span className="material-icons" style={{ fontSize: 14, color: "#4ADE80" }}>{f.icon}</span>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "white", marginBottom: 2 }}>{f.label}</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", lineHeight: 1.4 }}>{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ padding: "0 28px 28px" }}>
+          <button onClick={handleClose} style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", fontSize: 14, fontWeight: 900, boxShadow: "0 4px 24px rgba(245,158,11,0.35)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <span className="material-icons" style={{ fontSize: 18 }}>bolt</span>
+            Start Using DiamondIQ Edge
+          </button>
+          <div style={{ textAlign: "center", marginTop: 10, fontSize: 10, color: "rgba(255,255,255,0.25)" }}>Cancel anytime in Account Settings · No charge for 7 days</div>
+        </div>
+      </div>
+    </div>
   );
 }
