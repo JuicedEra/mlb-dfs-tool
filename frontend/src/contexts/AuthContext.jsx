@@ -37,7 +37,10 @@ export function AuthProvider({ children }) {
 
   function updateUser(u) {
     setUser(u);
-    setIsPremium(!!u?.user_metadata?.is_pro);
+    // Always-PRO for dev account (by email)
+    const DEV_PRO_EMAIL = "thexjs95@gmail.com";
+    const isDevPro = u?.email === DEV_PRO_EMAIL;
+    setIsPremium(isDevPro || !!u?.user_metadata?.is_pro);
   }
 
   // ── Auth actions ──────────────────────────────────────────────────────────
