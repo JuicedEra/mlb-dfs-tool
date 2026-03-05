@@ -1037,7 +1037,7 @@ function ProWelcomeModal({ user, onClose }) {
           {/* Diamond mark with glow */}
           <div style={{ position: "relative", display: "inline-block", marginBottom: 20 }}>
             <div style={{
-              position: "absolute", inset: -16,
+              position: "absolute", top: -16, left: -16, right: -16, bottom: -16,
               background: "radial-gradient(circle, rgba(245,158,11,0.25) 0%, transparent 70%)",
               borderRadius: "50%",
             }} />
@@ -1048,7 +1048,7 @@ function ProWelcomeModal({ user, onClose }) {
               <DiamondMark size={72} />
               {/* Gold orbit ring */}
               <div style={{
-                position: "absolute", inset: -6,
+                position: "absolute", top: -6, left: -6, right: -6, bottom: -6,
                 border: "1.5px solid rgba(245,158,11,0.5)",
                 borderRadius: "50%",
                 animation: "spin 8s linear infinite",
