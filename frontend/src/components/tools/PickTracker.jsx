@@ -786,6 +786,16 @@ function AddPickModal({ prefill, today, onAdd, onClose }) {
 
   function handleSubmit() {
     if (!selected && !query.trim()) return;
+
+    // Block pick if the game has already started
+    if (selected?.gameDate) {
+      const gameStart = new Date(selected.gameDate);
+      if (gameStart <= new Date()) {
+        alert("This game has already started — picks must be made before first pitch.");
+        return;
+      }
+    }
+
     const name = selected ? selected.playerName : query.trim();
     onAdd({
       playerName: name,
@@ -885,6 +895,14 @@ function AddPickModal({ prefill, today, onAdd, onClose }) {
             </div>
           )}
 
+          {/* Game started warning */}
+          {selected?.gameDate && new Date(selected.gameDate) <= new Date() && (
+            <div style={{ fontSize: 12, color: "var(--red-data)", padding: "8px 10px", background: "rgba(239,68,68,0.08)", borderRadius: 6, display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="material-icons" style={{ fontSize: 14 }}>lock_clock</span>
+              This game has already started — picks must be logged before first pitch.
+            </div>
+          )}
+
           {/* Prop type */}
           <div className="form-field">
             <label className="form-label">Prop Type</label>
@@ -909,7 +927,7 @@ function AddPickModal({ prefill, today, onAdd, onClose }) {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 4 }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
             <button type="button" className="btn btn-primary btn-sm" onClick={handleSubmit}
-              disabled={!selected && !query.trim()}>
+              disabled={(!selected && !query.trim()) || (selected?.gameDate && new Date(selected.gameDate) <= new Date())}>
               <span className="material-icons">check</span>Log Pick
             </button>
           </div>
