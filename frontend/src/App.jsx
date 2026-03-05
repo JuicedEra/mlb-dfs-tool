@@ -209,7 +209,7 @@ export default function App() {
                 <span style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {user.user_metadata?.full_name || user.email?.split("@")[0] || "Account"}
                 </span>
-                {isPremium && <span style={{ fontSize: 8, fontWeight: 900, background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>EDGE</span>}
+                {isPremium && <span style={{ fontSize: 8, fontWeight: 900, background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>PRO</span>}
               </button>
               {showUserMenu && (
                 <>
@@ -997,7 +997,7 @@ function UpgradeModal({ onUpgrade, onClose, isPremium }) {
           <div>
             <span style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: "white" }}>
               <span className="material-icons" style={{ fontSize: 18, verticalAlign: "middle", marginRight: 6, color: "#F59E0B" }}>star</span>
-              DiamondIQ Edge
+              DiamondIQ PRO
             </span>
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 }}>Unlock the full analytical edge</div>
           </div>
@@ -1085,7 +1085,7 @@ function UpgradeModal({ onUpgrade, onClose, isPremium }) {
             <span className="material-icons" style={{ fontSize: 16 }}>bolt</span>
             {loading ? "Redirecting to checkout..." : showTrial
               ? "Start Free 7-Day Trial"
-              : `Get DiamondIQ Edge — ${selectedPlan === "annual" ? "$119/yr" : "$14.99/mo"}`
+              : `Get DiamondIQ PRO — ${selectedPlan === "annual" ? "$119/yr" : "$14.99/mo"}`
             }
           </button>
 
@@ -1202,7 +1202,7 @@ function AccountSettings({ isPremium, onUpgrade }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <span className="material-icons" style={{ color: "#F59E0B", fontSize: 20 }}>star</span>
                   <span style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: "white" }}>
-                    {user?.user_metadata?.trial_used ? "Upgrade to DiamondIQ Edge" : "Try DiamondIQ Edge Free"}
+                    {user?.user_metadata?.trial_used ? "Upgrade to DiamondIQ PRO" : "Try DiamondIQ PRO Free"}
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, marginBottom: 16 }}>
@@ -1470,7 +1470,7 @@ function TermsContent() {
       <h3 style={{ color: "var(--text-primary)", fontSize: 14, marginBottom: 8 }}>Use of the service</h3>
       <p>DiamondIQ is a fantasy baseball analytics tool. All rankings, scores, and picks are algorithmic suggestions for entertainment and informational purposes only. Nothing on this site constitutes professional sports betting advice.</p>
       <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>Subscriptions</h3>
-      <p>DiamondIQ Edge subscriptions are billed monthly or annually via Stripe. You may cancel at any time — your access continues until the end of the current billing period. No refunds are issued for partial periods.</p>
+      <p>DiamondIQ PRO subscriptions are billed monthly or annually via Stripe. You may cancel at any time — your access continues until the end of the current billing period. No refunds are issued for partial periods.</p>
       <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>Accuracy</h3>
       <p>MLB data is sourced from official APIs. DiamondIQ makes no guarantees about the accuracy, completeness, or timeliness of any data or rankings. Past pick performance is not a guarantee of future results.</p>
       <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>Contact</h3>
@@ -1502,7 +1502,7 @@ function DevLandingToggle({ on, setOn }) {
 // ─── FAQ DATA & COMPONENTS ────────────────────────────────────────────────────
 
 const FAQ_ITEMS = [
-  { q: "Is DiamondIQ really free?", a: "Yes. Creating an account is completely free — no credit card required. Free accounts get access to Today's Picks rankings, Player Research, Park Factors, Pick Tracker, and Backtester. PRO tools are locked behind the Edge subscription." },
+  { q: "Is DiamondIQ really free?", a: "Yes. Creating an account is completely free — no credit card required. Free accounts get access to Today's Picks rankings, Player Research, Park Factors, Pick Tracker, and Backtester. PRO tools are locked behind the PRO subscription." },
   { q: "What's included in the 7-day free trial?", a: "The trial gives you full access to every PRO feature — Pitcher Intel, Statcast metrics, Streamer Finder, ABS Challenge Tracker, live prop lines and odds, and the Top 5 daily locks. Everything. No restrictions." },
   { q: "Do I need a credit card for the free trial?", a: "Yes — a card is required to start the trial so Stripe can auto-convert to a paid subscription after 7 days. You won't be charged anything today. If you cancel before the 7 days are up, you pay nothing." },
   { q: "What happens when the trial ends?", a: "After 7 days your card is automatically charged — $14.99/month or $119/year depending on the plan you chose. You'll receive an email reminder before the trial ends. If you cancel during the trial, you keep full PRO access until the 7 days are up, then revert to the free plan." },
@@ -1614,10 +1614,10 @@ function ProWelcomeModal({ user, onClose }) {
           <div style={{ marginBottom: 20 }}><DiamondMark size={72} /></div>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 50, padding: "4px 14px", marginBottom: 14 }}>
             <span className="material-icons" style={{ fontSize: 12, color: "#F59E0B" }}>stars</span>
-            <span style={{ fontSize: 10, fontWeight: 900, color: "#F59E0B", letterSpacing: "1.5px" }}>DIAMONDIQ EDGE</span>
+            <span style={{ fontSize: 10, fontWeight: 900, color: "#F59E0B", letterSpacing: "1.5px" }}>DIAMONDIQ PRO</span>
           </div>
           <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(20px, 4vw, 26px)", fontWeight: 900, color: "white", margin: "0 0 10px", lineHeight: 1.2 }}>
-            Welcome to the Edge, <span style={{ color: "#F59E0B" }}>{name}</span>
+            Welcome to PRO, <span style={{ color: "#F59E0B" }}>{name}</span>
           </h2>
           <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.6 }}>
             Your 7-day free trial is active. Full PRO access — no restrictions.<br />You won't be charged until your trial ends.
@@ -1641,7 +1641,7 @@ function ProWelcomeModal({ user, onClose }) {
         <div style={{ padding: "0 28px 28px" }}>
           <button onClick={handleClose} style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", fontSize: 14, fontWeight: 900, boxShadow: "0 4px 24px rgba(245,158,11,0.35)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
             <span className="material-icons" style={{ fontSize: 18 }}>bolt</span>
-            Start Using DiamondIQ Edge
+            Start Using DiamondIQ PRO
           </button>
           <div style={{ textAlign: "center", marginTop: 10, fontSize: 10, color: "rgba(255,255,255,0.25)" }}>Cancel anytime in Account Settings · No charge for 7 days</div>
         </div>
