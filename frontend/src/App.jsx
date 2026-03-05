@@ -65,7 +65,16 @@ export default function App() {
   const isDevProByEmail = DEV_PRO_EMAILS.includes(user?.email);
   const isPremium = isDevProByEmail || (HAS_AUTH ? authPremium : devPro);
 
-  // Show welcome toast when email verification completes
+  // Handle return from Stripe checkout
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("upgraded") === "true") {
+      window.history.replaceState({}, "", window.location.pathname);
+      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", {
+        detail: { msg: "🎉 Welcome to DiamondIQ Edge! Your PRO access is now active.", type: "ok", duration: 8000 }
+      }));
+    }
+  }, []);
   useEffect(() => {
     if (justVerified && user) {
       window.dispatchEvent(new CustomEvent("diamondiq:picktoast", {
@@ -92,9 +101,9 @@ export default function App() {
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
-  function handleUpgrade() {
+  function handleUpgrade(plan = "monthly") {
     if (!user && HAS_AUTH) { setAuthMode("signup"); setShowAuth(true); return; }
-    if (HAS_STRIPE && user) redirectToCheckout(user.id, user.email);
+    if (HAS_STRIPE && user) redirectToCheckout(user.id, user.email, plan);
     else setShowUpgrade(true);
   }
 
@@ -867,42 +876,92 @@ function LandingFeatures() {
   );
 }
 function UpgradeModal({ onUpgrade, onClose, isPremium }) {
+  const [selectedPlan, setSelectedPlan] = useState("annual"); // default to annual — better value
+  const [loading, setLoading] = useState(false);
+
   if (isPremium) return null;
+
   const features = [
-    { icon: "auto_awesome", label: "Top 5 picks unlocked daily" },
+    { icon: "auto_awesome",  label: "Top 5 PRO locks daily" },
     { icon: "sports_baseball", label: "Pitcher Intel & matchup data" },
-    { icon: "query_stats", label: "Full Statcast metrics (xBA, barrel%, exit velo)" },
-    { icon: "science", label: "Historical Backtester" },
-    { icon: "gavel", label: "ABS Challenge Tracker" },
-    { icon: "share", label: "Shareable pick cards" },
-    { icon: "trending_up", label: "Live betting odds integration" },
+    { icon: "query_stats",   label: "Full Statcast metrics (xBA, barrel%, exit velo)" },
+    { icon: "science",       label: "Unlimited Backtester access" },
+    { icon: "gavel",         label: "ABS Challenge Tracker" },
+    { icon: "cloud_download",label: "Fantasy Streamer Finder" },
+    { icon: "trending_up",   label: "Live betting odds & prop lines" },
   ];
+
+  async function handleCheckout() {
+    setLoading(true);
+    await onUpgrade(selectedPlan);
+    setLoading(false);
+    onClose();
+  }
+
   return (
     <div className="add-pick-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="add-pick-modal" style={{ maxWidth: 400 }}>
-        <div className="add-pick-modal-header" style={{ background: "linear-gradient(135deg, #0A2342, #132E52)" }}>
+      <div className="add-pick-modal" style={{ maxWidth: 420 }}>
+        <div className="add-pick-modal-header" style={{ background: "linear-gradient(135deg, #0A2342, #0D3060)" }}>
           <div>
             <span style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: "white" }}>
-              <span className="material-icons" style={{ fontSize: 18, verticalAlign: "middle", marginRight: 6, color: "var(--yellow)" }}>star</span>
-              DiamondIQ PRO
+              <span className="material-icons" style={{ fontSize: 18, verticalAlign: "middle", marginRight: 6, color: "#F59E0B" }}>star</span>
+              DiamondIQ Edge
             </span>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>Unlock the full analytical edge</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 }}>Unlock the full analytical edge</div>
           </div>
           <button className="close-btn" onClick={onClose}><span className="material-icons">close</span></button>
         </div>
-        <div className="add-pick-modal-body" style={{ gap: 6 }}>
-          {features.map(f => (
-            <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
-              <span className="material-icons" style={{ fontSize: 16, color: "var(--accent)" }}>{f.icon}</span>
-              <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{f.label}</span>
-            </div>
-          ))}
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, textAlign: "center" }}>
-            <button className="btn btn-primary" onClick={() => { onUpgrade(); onClose(); }}
-              style={{ width: "100%", justifyContent: "center", padding: "12px 0", fontSize: 14, fontWeight: 800, background: "var(--yellow)", color: "#0A2342", border: "none" }}>
-              <span className="material-icons">star</span>Upgrade to PRO
-            </button>
-            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8 }}>Monthly & yearly plans available</div>
+        <div className="add-pick-modal-body" style={{ gap: 0, padding: "16px 20px" }}>
+
+          {/* Features list */}
+          <div style={{ marginBottom: 20 }}>
+            {features.map(f => (
+              <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                <span className="material-icons" style={{ fontSize: 15, color: "var(--accent)" }}>{f.icon}</span>
+                <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{f.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Plan selector */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+            {[
+              { id: "monthly", price: "$14.99", period: "/ month", badge: null },
+              { id: "annual",  price: "$119",   period: "/ year",  badge: "Save $61" },
+            ].map(plan => (
+              <button key={plan.id} onClick={() => setSelectedPlan(plan.id)}
+                style={{
+                  flex: 1, padding: "12px 10px", borderRadius: 10, cursor: "pointer",
+                  border: `2px solid ${selectedPlan === plan.id ? "#4ADE80" : "var(--border)"}`,
+                  background: selectedPlan === plan.id ? "rgba(74,222,128,0.08)" : "var(--surface-2)",
+                  transition: "all 0.15s", textAlign: "center",
+                }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: "var(--text-primary)" }}>{plan.price}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{plan.period}</div>
+                {plan.badge && (
+                  <div style={{ marginTop: 4, fontSize: 9, fontWeight: 800, color: "#4ADE80", background: "rgba(74,222,128,0.15)", borderRadius: 20, padding: "2px 8px", display: "inline-block" }}>
+                    {plan.badge}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* CTA */}
+          <button onClick={handleCheckout} disabled={loading}
+            style={{
+              width: "100%", padding: "13px 0", borderRadius: 10, border: "none",
+              cursor: loading ? "default" : "pointer",
+              background: loading ? "rgba(245,158,11,0.4)" : "linear-gradient(135deg, #F59E0B, #D97706)",
+              color: "#0A2342", fontSize: 14, fontWeight: 900,
+              boxShadow: "0 4px 16px rgba(245,158,11,0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}>
+            <span className="material-icons" style={{ fontSize: 16 }}>bolt</span>
+            {loading ? "Redirecting to checkout..." : `Get DiamondIQ Edge — ${selectedPlan === "annual" ? "$119/yr" : "$14.99/mo"}`}
+          </button>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 10, textAlign: "center" }}>
+            Secure checkout via Stripe · Cancel anytime
           </div>
         </div>
       </div>
@@ -916,9 +975,20 @@ function AccountSettings({ isPremium, onUpgrade }) {
   const [newPw, setNewPw] = useState("");
   const [pwMsg, setPwMsg] = useState(null);
   const [pwLoading, setPwLoading] = useState(false);
-  const [deleteStage, setDeleteStage] = useState(0); // 0=hidden, 1=confirm, 2=typing
+  const [deleteStage, setDeleteStage] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+
+  async function handleManageSubscription() {
+    const customerId = user?.user_metadata?.stripe_customer_id;
+    if (!customerId) return;
+    setPortalLoading(true);
+    const { openBillingPortal } = await import("./utils/stripe");
+    const { error } = await openBillingPortal(customerId);
+    if (error) window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Could not open billing portal: " + error, type: "error" } }));
+    setPortalLoading(false);
+  }
 
   async function handleChangePassword() {
     if (!HAS_AUTH || !newPw || newPw.length < 6) return;
@@ -1027,8 +1097,10 @@ function AccountSettings({ isPremium, onUpgrade }) {
               <span style={{ fontWeight: 700 }}>PRO subscription active</span>
             </div>
             <p style={{ lineHeight: 1.6, marginBottom: 12 }}>Manage billing, update payment method, or cancel through Stripe's secure portal.</p>
-            <button className="btn btn-sm" style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
-              <span className="material-icons" style={{ fontSize: 14 }}>open_in_new</span>Manage Subscription
+            <button className="btn btn-sm" onClick={handleManageSubscription} disabled={portalLoading}
+              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+              <span className="material-icons" style={{ fontSize: 14 }}>open_in_new</span>
+              {portalLoading ? "Opening..." : "Manage Subscription"}
             </button>
           </div>
         </div>
@@ -1134,7 +1206,7 @@ function AppFooter() {
           {[
             { label: "Privacy", action: () => setShowPrivacy(true) },
             { label: "Terms", action: () => setShowTerms(true) },
-            { label: "Contact", action: () => window.location.href = `mailto:${CONTACT_EMAIL}` },
+            { label: "Contact", action: () => window.open(`mailto:${CONTACT_EMAIL}`) },
           ].map(l => (
             <button key={l.label} onClick={l.action}
               style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: 0 }}>
@@ -1175,7 +1247,7 @@ function LandingFooter() {
           {[
             { label: "Privacy Policy", action: () => setShowPrivacy(true) },
             { label: "Terms of Service", action: () => setShowTerms(true) },
-            { label: "Contact Us", action: () => window.location.href = `mailto:${CONTACT_EMAIL}` },
+            { label: "Contact Us", action: () => window.open(`mailto:${CONTACT_EMAIL}`) },
           ].map(l => (
             <button key={l.label} onClick={l.action}
               style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", fontSize: 11, cursor: "pointer", padding: 0, transition: "color 0.15s" }}
