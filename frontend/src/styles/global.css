@@ -1001,6 +1001,8 @@ tbody td { padding: 10px 13px; vertical-align: middle; }
   .header-date { display: none; }
   .header-divider { display: none; }
   .header-brand-sub { display: none; }
+  .header-mode-toggle { display: none !important; }
+  .dark-mode-btn { display: none !important; }
 
   .mode-toggle { gap: 2px; }
   .mode-btn { font-size: 10px; padding: 5px 10px; }
