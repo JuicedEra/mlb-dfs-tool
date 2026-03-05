@@ -22,13 +22,20 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    // If returning from Stripe checkout, force a session refresh so
-    // updated user_metadata.is_pro from the webhook is picked up immediately
+    // If returning from Stripe checkout, poll for is_pro to be set by webhook
     const params = new URLSearchParams(window.location.search);
     if (params.get("upgraded") === "true") {
-      supabase.auth.refreshSession().then(({ data: { session } }) => {
-        if (session?.user) updateUser(session.user);
-      });
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        const { data: { session: fresh } } = await supabase.auth.refreshSession();
+        if (fresh?.user?.user_metadata?.is_pro) {
+          updateUser(fresh.user);
+          clearInterval(poll);
+        } else if (attempts >= 10) {
+          clearInterval(poll); // give up after ~20 seconds
+        }
+      }, 2000);
     }
 
     // Listen for auth changes
@@ -37,7 +44,11 @@ export function AuthProvider({ children }) {
       // SIGNED_IN after email confirmation — show welcome state
       if (event === "SIGNED_IN" && session?.user?.email_confirmed_at) {
         setJustVerified(true);
-        setTimeout(() => setJustVerified(false), 8000); // auto-clear after 8s
+        setTimeout(() => setJustVerified(false), 8000);
+      }
+      // PASSWORD_RECOVERY — redirect to reset form
+      if (event === "PASSWORD_RECOVERY") {
+        window.location.href = "/?reset=1";
       }
     });
 
