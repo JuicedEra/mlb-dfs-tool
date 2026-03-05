@@ -1078,7 +1078,7 @@ function AccountSettings({ isPremium, onUpgrade }) {
                   ))}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                  <button onClick={onUpgrade} style={{
+                  <button onClick={() => onUpgrade("monthly")} style={{
                     padding: "10px 24px", borderRadius: 10, border: "none", cursor: "pointer",
                     background: "linear-gradient(135deg, #F59E0B, #D97706)",
                     color: "#0A2342", fontSize: 13, fontWeight: 900,
@@ -1088,7 +1088,10 @@ function AccountSettings({ isPremium, onUpgrade }) {
                     <span className="material-icons" style={{ fontSize: 16 }}>bolt</span>
                     Upgrade Now — $14.99/mo
                   </button>
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>or $119/yr · save $61</span>
+                  <button onClick={() => onUpgrade("annual")}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "rgba(255,255,255,0.5)", textDecoration: "underline", padding: 0 }}>
+                    or $119/yr · save $61
+                  </button>
                 </div>
               </div>
             </div>
