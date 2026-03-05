@@ -1122,11 +1122,12 @@ function AccountSettings({ isPremium, onUpgrade }) {
   async function handleManageSubscription() {
     const customerId = user?.user_metadata?.stripe_customer_id;
     if (!customerId) {
-      window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Billing portal unavailable — please contact support at " + CONTACT_EMAIL, type: "error", duration: 6000 } }));
+      // No Stripe customer ID — webhook didn't fire for this user
+      // Send them directly to Stripe customer portal login as fallback
+      window.open("https://billing.stripe.com/p/login/dRm28rcKA6SD2UybQ01ZS00", "_blank");
       return;
     }
     setPortalLoading(true);
-    // Open a blank window synchronously (before async) so popup blocker doesn't block it
     const win = window.open("", "_blank");
     if (win) win.document.write("<p style='font-family:sans-serif;padding:40px;color:#555'>Opening billing portal...</p>");
     try {
@@ -1141,7 +1142,7 @@ function AccountSettings({ isPremium, onUpgrade }) {
         else window.location.href = data.url;
       } else {
         if (win) win.close();
-        window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Could not open billing portal: " + (data.error || "Unknown error"), type: "error" } }));
+        window.dispatchEvent(new CustomEvent("diamondiq:picktoast", { detail: { msg: "Could not open portal: " + (data.error || "Unknown error"), type: "error", duration: 6000 } }));
       }
     } catch (err) {
       if (win) win.close();
