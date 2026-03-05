@@ -61,6 +61,10 @@ export default function App() {
   const [devPro, setDevPro] = useState(false);
   const [devLanding, setDevLanding] = useState(false);
 
+  const DEV_PRO_EMAILS = ["thexjs95@gmail.com"];
+  const isDevProByEmail = DEV_PRO_EMAILS.includes(user?.email);
+  const isPremium = isDevProByEmail || (HAS_AUTH ? authPremium : devPro);
+
   // Show welcome toast when email verification completes
   useEffect(() => {
     if (justVerified && user) {
@@ -72,7 +76,6 @@ export default function App() {
   }, [justVerified, user]);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("diq_theme") === "dark");
   const [oddsConnected, setOddsConnected] = useState(null);
-  const isPremium = HAS_AUTH ? authPremium : devPro;
 
   // Apply dark mode theme to document root
   useEffect(() => {
@@ -273,6 +276,7 @@ export default function App() {
             {activeTool === "profile"  && <ProfilePage isPremium={isPremium} />}
             {activeTool === "tracker"  && <PickTracker />}
             {activeTool === "settings" && <AccountSettings isPremium={isPremium} onUpgrade={handleUpgrade} />}
+            <AppFooter />
           </main>
         </div>
       )}
@@ -291,6 +295,7 @@ function LandingScreen({ onSignIn, onSignUp }) {
     <div style={{ minHeight: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column' }}>
       <LandingHero onSignIn={onSignIn} onSignUp={onSignUp} />
       <LandingFeatures />
+      <LandingFooter />
     </div>
   );
 }
@@ -1112,6 +1117,130 @@ function AccountSettings({ isPremium, onUpgrade }) {
         </div>
       </div>
     </div>
+  );
+}
+
+const CONTACT_EMAIL = "diamondiqinfo@gmail.com";
+
+function AppFooter() {
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const year = new Date().getFullYear();
+  return (
+    <>
+      <div style={{ marginTop: 40, padding: "16px 24px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>© {year} DiamondIQ. All rights reserved.</span>
+        <div style={{ display: "flex", gap: 16 }}>
+          {[
+            { label: "Privacy", action: () => setShowPrivacy(true) },
+            { label: "Terms", action: () => setShowTerms(true) },
+            { label: "Contact", action: () => window.location.href = `mailto:${CONTACT_EMAIL}` },
+          ].map(l => (
+            <button key={l.label} onClick={l.action}
+              style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: 0 }}>
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {showPrivacy && <LegalModal title="Privacy Policy" onClose={() => setShowPrivacy(false)}><PrivacyPolicyContent /></LegalModal>}
+      {showTerms   && <LegalModal title="Terms of Service" onClose={() => setShowTerms(false)}><TermsContent /></LegalModal>}
+    </>
+  );
+}
+
+function LandingFooter() {
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const year = new Date().getFullYear();
+
+  return (
+    <>
+      <footer style={{
+        marginTop: "auto", padding: "28px 32px",
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(0,0,0,0.2)",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        flexWrap: "wrap", gap: 16,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color: "white" }}>
+            Diamond<span style={{ color: "#4ADE80" }}>IQ</span>
+          </span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>
+            © {year} DiamondIQ. All rights reserved.
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+          {[
+            { label: "Privacy Policy", action: () => setShowPrivacy(true) },
+            { label: "Terms of Service", action: () => setShowTerms(true) },
+            { label: "Contact Us", action: () => window.location.href = `mailto:${CONTACT_EMAIL}` },
+          ].map(l => (
+            <button key={l.label} onClick={l.action}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", fontSize: 11, cursor: "pointer", padding: 0, transition: "color 0.15s" }}
+              onMouseEnter={e => e.target.style.color = "rgba(255,255,255,0.7)"}
+              onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.35)"}>
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </footer>
+
+      {showPrivacy && <LegalModal title="Privacy Policy" onClose={() => setShowPrivacy(false)}><PrivacyPolicyContent /></LegalModal>}
+      {showTerms  && <LegalModal title="Terms of Service" onClose={() => setShowTerms(false)}><TermsContent /></LegalModal>}
+    </>
+  );
+}
+
+function LegalModal({ title, onClose, children }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, width: "100%", maxWidth: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 800, color: "var(--text-primary)" }}>{title}</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
+            <span className="material-icons">close</span>
+          </button>
+        </div>
+        <div style={{ padding: "20px 24px", overflowY: "auto", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrivacyPolicyContent() {
+  return (
+    <>
+      <p style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 16 }}>Last updated: March 2025</p>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 14, marginBottom: 8 }}>What we collect</h3>
+      <p>We collect your email address when you create an account, and the picks you choose to track within the app. We do not collect payment card details — all payments are handled securely by Stripe.</p>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>How we use it</h3>
+      <p>Your email is used to send account verification, password reset emails, and optional product updates. Your picks are stored to power your personal pick record and stats. We do not sell or share your data with third parties.</p>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>Cookies & analytics</h3>
+      <p>We use minimal, anonymous analytics to understand how the app is used. No advertising cookies are used. DiamondIQ products are ad-free.</p>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>Your rights</h3>
+      <p>You can delete your account and all associated data at any time from Account Settings. For any privacy questions, contact us at <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "var(--accent-light)" }}>{CONTACT_EMAIL}</a>.</p>
+    </>
+  );
+}
+
+function TermsContent() {
+  return (
+    <>
+      <p style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 16 }}>Last updated: March 2025</p>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 14, marginBottom: 8 }}>Use of the service</h3>
+      <p>DiamondIQ is a fantasy baseball analytics tool. All rankings, scores, and picks are algorithmic suggestions for entertainment and informational purposes only. Nothing on this site constitutes professional sports betting advice.</p>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>Subscriptions</h3>
+      <p>DiamondIQ Edge subscriptions are billed monthly or annually via Stripe. You may cancel at any time — your access continues until the end of the current billing period. No refunds are issued for partial periods.</p>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>Accuracy</h3>
+      <p>MLB data is sourced from official APIs. DiamondIQ makes no guarantees about the accuracy, completeness, or timeliness of any data or rankings. Past pick performance is not a guarantee of future results.</p>
+      <h3 style={{ color: "var(--text-primary)", fontSize: 14, margin: "16px 0 8px" }}>Contact</h3>
+      <p>Questions? Reach us at <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "var(--accent-light)" }}>{CONTACT_EMAIL}</a>.</p>
+    </>
   );
 }
 
