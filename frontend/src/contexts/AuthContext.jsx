@@ -2,7 +2,7 @@
 // Wraps the app with user state from Supabase Auth.
 // Premium status is read from user_metadata.is_pro (set by Stripe webhook).
 
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { supabase, HAS_AUTH } from "../utils/supabase";
 
 const AuthContext = createContext(null);
@@ -11,6 +11,7 @@ export function AuthProvider({ children }) {
   const [user, setUser]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [isPremium, setIsPremium] = useState(false);
+  const [justVerified, setJustVerified] = useState(false); // fired when email link is clicked
 
   useEffect(() => {
     if (!HAS_AUTH) { setLoading(false); return; }
@@ -22,8 +23,13 @@ export function AuthProvider({ children }) {
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       updateUser(session?.user || null);
+      // SIGNED_IN after email confirmation — show welcome state
+      if (event === "SIGNED_IN" && session?.user?.email_confirmed_at) {
+        setJustVerified(true);
+        setTimeout(() => setJustVerified(false), 8000); // auto-clear after 8s
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -74,7 +80,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, isPremium, HAS_AUTH,
+      user, loading, isPremium, HAS_AUTH, justVerified,
       signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, resetPassword,
     }}>
       {children}
