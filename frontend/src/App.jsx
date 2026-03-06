@@ -210,9 +210,9 @@ export default function App() {
               {(() => {
                 let equippedEmoji = "⚾";
                 try {
-                  const eqId = localStorage.getItem("diamondiq_equipped_avatar") || "rookie";
-                  const EMOJIS = { rookie:"⚾",prospect:"🔥",allstar:"⭐",veteran:"🏆",legend:"💎",diamond:"💠",centurion:"🦅",grandmaster:"👑",immortal:"🌟",streak3:"🔥",streak5:"🌶️",streak10:"⚡",streak15:"🎯",streak20:"🤖",streak25:"⚾",streak30:"🏅",streak35:"🔮",streak40:"🌠",streak45:"✨",streak50:"🏆",streak55:"💠",streak57:"💰",lb1:"📊",lb2:"📈",lb5:"🎖️",lb10:"🥊",lb20:"🔭",lb50:"🏅",lb100:"💡",lb365:"📅",lb500:"🌟",lb1000:"👑" };
-                  equippedEmoji = EMOJIS[eqId] || "⚾";
+                  const eqId = localStorage.getItem("diamondiq_equipped_avatar") || "default_target";
+                  const EMOJIS = { default_target:"🎯",default_cap:"🧢",default_chart:"📊",default_dice:"🎲",default_clipboard:"📋",pro_diamond:"💎",rookie:"⚾",prospect:"🔥",allstar:"⭐",veteran:"🏆",legend:"💎",diamond:"💠",centurion:"🦅",grandmaster:"👑",immortal:"🌟",streak3:"🔥",streak5:"🌶️",streak10:"⚡",streak15:"🎯",streak20:"🤖",streak25:"⚾",streak30:"🏅",streak35:"🔮",streak40:"🌠",streak45:"✨",streak50:"🏆",streak55:"💠",streak57:"💰",lb1:"📊",lb2:"📈",lb5:"🎖️",lb10:"🥊",lb20:"🔭",lb50:"🏅",lb100:"💡",lb365:"📅",lb500:"🌟",lb1000:"👑" };
+                  equippedEmoji = EMOJIS[eqId] || "🎯";
                 } catch {}
                 return (
                   <button onClick={() => setShowUserMenu(v => !v)}
