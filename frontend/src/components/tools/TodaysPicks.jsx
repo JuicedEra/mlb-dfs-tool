@@ -1336,128 +1336,114 @@ function ShareModal({ picks, mode, showBvP, onClose, isPersonal }) {
   async function drawCard() {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const W = 600, H = 140 + picks.length * 80 + 50;
+    const W = 560, HEADER = 72, ROW = 68, FOOTER = 36;
+    const H = HEADER + picks.length * ROW + FOOTER;
     canvas.width = W * 2; canvas.height = H * 2;
     canvas.style.width = W + "px"; canvas.style.height = H + "px";
     const ctx = canvas.getContext("2d");
     ctx.scale(2, 2);
 
-    // Background
-    const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, "#0A2342");
-    grad.addColorStop(1, "#132E52");
-    ctx.fillStyle = grad;
-    roundRect(ctx, 0, 0, W, H, 16);
-    ctx.fill();
+    // Background gradient
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, "#060F1E");
+    bg.addColorStop(1, "#0D2240");
+    ctx.fillStyle = bg;
+    roundRect(ctx, 0, 0, W, H, 0); ctx.fill();
 
-    // Header
+    // Top gold accent line
+    const gold = ctx.createLinearGradient(0, 0, W, 0);
+    gold.addColorStop(0, "transparent"); gold.addColorStop(0.2, "#F59E0B");
+    gold.addColorStop(0.8, "#D97706"); gold.addColorStop(1, "transparent");
+    ctx.fillStyle = gold; ctx.fillRect(0, 0, W, 3);
+
+    // Logo block
     ctx.fillStyle = "#15803D";
-    roundRect(ctx, 16, 16, 40, 40, 8);
-    ctx.fill();
-    ctx.fillStyle = "white";
-    ctx.font = "bold 14px system-ui";
-    ctx.textAlign = "center";
-    ctx.fillText("IQ", 36, 42);
-    ctx.textAlign = "left";
-    ctx.font = "bold 20px system-ui";
-    ctx.fillText("DiamondIQ", 66, 34);
-    ctx.font = "11px system-ui";
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
-    ctx.fillText(`${mode === "bts" ? "Beat the Streak" : "Props / DFS"} · ${today}`, 66, 50);
+    roundRect(ctx, 18, 14, 34, 34, 7); ctx.fill();
+    ctx.fillStyle = "white"; ctx.font = "bold 12px system-ui"; ctx.textAlign = "center";
+    ctx.fillText("IQ", 35, 36);
 
-    // Divider
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(16, 72); ctx.lineTo(W-16, 72); ctx.stroke();
-
-    // Section title
-    ctx.fillStyle = "rgba(255,255,255,0.4)";
-    ctx.font = "bold 9px system-ui";
+    // Brand name
     ctx.textAlign = "left";
-    ctx.fillText(isPersonal ? "MY PICKS TODAY" : "TODAY'S TOP PICKS", 20, 90);
+    ctx.font = "bold 17px Georgia"; ctx.fillStyle = "white";
+    ctx.fillText("Diamond", 62, 28);
+    ctx.fillStyle = "#4ADE80";
+    ctx.fillText("IQ", 62 + ctx.measureText("Diamond").width, 28);
 
-    // Column headers
-    ctx.font = "bold 9px system-ui";
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.fillText("PLAYER", 50, 110);
-    ctx.textAlign = "center";
-    ctx.fillText("SCORE", 400, 110);
-    ctx.fillText("TIER", 465, 110);
-    ctx.fillText("L7", 530, 110);
-    ctx.textAlign = "left";
+    // Date + mode
+    ctx.font = "10px system-ui"; ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillText(`${mode === "bts" ? "Beat the Streak" : "Props / DFS"}  ·  ${today}  ·  diamondiq.pro`, 62, 44);
+
+    // Header label
+    ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.fillRect(0, HEADER - 1, W, 1);
+    ctx.font = "bold 8px system-ui"; ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.fillText(isPersonal ? "MY PICKS TODAY" : "TODAY'S TOP PICKS", 18, HEADER - 10);
 
     // Player rows
     for (let i = 0; i < picks.length; i++) {
       const p = picks[i];
-      const y = 120 + i * 80;
+      const y = HEADER + i * ROW;
       const score = showBvP ? p.scoreData.withBvP : p.scoreData.withoutBvP;
       const tier = p.scoreData.tierLabel;
+      const l7 = p.l7?.avg || "—";
 
-      // Row background
+      // Alternating row tint
       if (i % 2 === 0) {
-        ctx.fillStyle = "rgba(255,255,255,0.03)";
-        roundRect(ctx, 12, y, W - 24, 72, 8);
-        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.025)";
+        ctx.fillRect(0, y, W, ROW);
       }
 
-      // Rank circle
-      ctx.fillStyle = score >= 75 ? "#F59E0B" : score >= 60 ? "#15803D" : score >= 45 ? "#3B82F6" : "#64748B";
-      ctx.beginPath(); ctx.arc(32, y + 36, 12, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "white";
-      ctx.font = "bold 11px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText(String(i + 1), 32, y + 40);
-      ctx.textAlign = "left";
+      // Left color bar by tier
+      const tierColor = score >= 75 ? "#F59E0B" : score >= 60 ? "#4ADE80" : score >= 45 ? "#60A5FA" : "#94A3B8";
+      ctx.fillStyle = tierColor; ctx.fillRect(0, y + 8, 3, ROW - 16);
 
-      // Player name + matchup
-      ctx.fillStyle = "white";
-      ctx.font = "bold 14px system-ui";
-      ctx.fillText(p.batter.name, 54, y + 30);
-      ctx.font = "11px system-ui";
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.fillText(`${p.battingTeam.abbr} vs ${p.pitcher.name} · ${p.pitcher.hand || "?"}HP`, 54, y + 48);
+      // Rank number
+      ctx.font = "bold 11px system-ui"; ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.textAlign = "right";
+      ctx.fillText(`${i+1}`, 30, y + ROW/2 + 4);
 
-      // Factors
-      const factors = p.scoreData.factors.slice(0, 3).map(f => f.label).join("  ·  ");
-      ctx.font = "9px system-ui";
-      ctx.fillStyle = "rgba(255,255,255,0.35)";
-      ctx.fillText(factors, 54, y + 63);
+      // Player name
+      ctx.font = "bold 14px system-ui"; ctx.fillStyle = "white"; ctx.textAlign = "left";
+      ctx.fillText(p.batter.name, 40, y + 22);
 
-      // Score
-      ctx.textAlign = "center";
-      ctx.fillStyle = score >= 75 ? "#F59E0B" : score >= 60 ? "#4ADE80" : score >= 45 ? "#60A5FA" : "#94A3B8";
-      ctx.font = "bold 22px system-ui";
-      ctx.fillText(String(score), 400, y + 38);
+      // Matchup line
+      ctx.font = "10px system-ui"; ctx.fillStyle = "rgba(255,255,255,0.4)";
+      const matchup = `${p.battingTeam.abbr} vs ${p.pitcher?.name || "TBD"}${p.pitcher?.hand ? ` (${p.pitcher.hand}HP)` : ""}`;
+      ctx.fillText(matchup, 40, y + 38);
 
-      // Score bar
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      roundRect(ctx, 370, y + 46, 60, 4, 2); ctx.fill();
-      ctx.fillStyle = score >= 75 ? "#F59E0B" : score >= 60 ? "#4ADE80" : score >= 45 ? "#60A5FA" : "#94A3B8";
-      roundRect(ctx, 370, y + 46, Math.max(score * 0.6, 2), 4, 2); ctx.fill();
+      // Top factors
+      const factors = (p.scoreData.factors || []).slice(0, 2).map(f => f.label).join("  ·  ");
+      ctx.font = "9px system-ui"; ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillText(factors, 40, y + 53);
 
-      // Tier badge
-      const tierColors = { Elite: "#F59E0B", Strong: "#15803D", Solid: "#3B82F6", Risky: "#64748B" };
-      ctx.fillStyle = tierColors[tier] || "#64748B";
-      roundRect(ctx, 440, y + 24, 50, 20, 4); ctx.fill();
-      ctx.fillStyle = "white";
-      ctx.font = "bold 9px system-ui";
-      ctx.fillText(tier, 465, y + 38);
+      // Score (right side)
+      ctx.textAlign = "right";
+      ctx.font = `bold 26px Georgia`; ctx.fillStyle = tierColor;
+      ctx.fillText(String(score), W - 18, y + 30);
 
-      // L7
-      const l7 = p.l7?.avg || "—";
+      // Score label
+      ctx.font = "8px system-ui"; ctx.fillStyle = "rgba(255,255,255,0.25)";
+      ctx.fillText("SCORE", W - 18, y + 44);
+
+      // Tier pill
+      ctx.fillStyle = tierColor + "22";
+      roundRect(ctx, W - 90, y + 48, 50, 13, 3); ctx.fill();
+      ctx.strokeStyle = tierColor + "66"; ctx.lineWidth = 0.5; ctx.stroke();
+      ctx.font = "bold 7px system-ui"; ctx.fillStyle = tierColor; ctx.textAlign = "center";
+      ctx.fillText(tier?.toUpperCase() || "", W - 65, y + 58);
+
+      // L7 AVG
+      ctx.textAlign = "right";
       const l7num = parseFloat(l7);
-      ctx.fillStyle = l7num >= 0.300 ? "#4ADE80" : l7num >= 0.265 ? "#FBBF24" : "rgba(255,255,255,0.6)";
-      ctx.font = "bold 13px system-ui";
-      ctx.fillText(l7, 530, y + 38);
-      ctx.textAlign = "left";
+      ctx.fillStyle = l7num >= 0.300 ? "#4ADE80" : l7num >= 0.265 ? "#FBBF24" : "rgba(255,255,255,0.4)";
+      ctx.font = "bold 12px system-ui";
+      ctx.fillText(l7 !== "—" ? `.${String(l7).replace("0.","").slice(0,3)}` : "—", W - 100, y + 30);
+      ctx.font = "8px system-ui"; ctx.fillStyle = "rgba(255,255,255,0.25)";
+      ctx.fillText("L7 AVG", W - 100, y + 44);
     }
 
     // Footer
-    const fy = H - 32;
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
-    ctx.font = "9px system-ui";
-    ctx.textAlign = "center";
-    ctx.fillText("diamondiq.app · MLB Hit Analytics", W / 2, fy);
+    ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(0, H - FOOTER, W, FOOTER);
+    ctx.font = "9px system-ui"; ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.textAlign = "center";
+    ctx.fillText("DiamondIQ PRO · MLB Hit Analytics · diamondiq.pro", W/2, H - FOOTER/2 + 4);
   }
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -1498,29 +1484,39 @@ function ShareModal({ picks, mode, showBvP, onClose, isPersonal }) {
   }
 
   return (
-    <div className="add-pick-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="add-pick-modal" style={{ maxWidth: 640, width: "95vw" }}>
-        <div className="add-pick-modal-header">
-          <span style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 800, color: "white" }}>
-            <span className="material-icons" style={{ fontSize: 16, verticalAlign: "middle", marginRight: 6 }}>share</span>
-            Share Today's Picks
-          </span>
+    <div style={{ position:"fixed", inset:0, zIndex:600, background:"rgba(0,8,20,0.88)", display:"flex", alignItems:"center", justifyContent:"center", padding:"16px", boxSizing:"border-box", overflowY:"auto" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background:"var(--surface)", borderRadius:16, border:"1px solid var(--border)", width:"min(620px, 100%)", overflow:"hidden", boxShadow:"0 24px 64px rgba(0,0,0,0.6)", display:"flex", flexDirection:"column" }}>
+        {/* Header */}
+        <div style={{ background:"var(--navy)", padding:"16px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:32, height:32, borderRadius:8, background:"#15803D", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <span style={{ fontWeight:900, fontSize:13, color:"white" }}>IQ</span>
+            </div>
+            <div>
+              <div style={{ fontFamily:"var(--font-display)", fontSize:15, fontWeight:800, color:"white" }}>Share Today's Picks</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)" }}>diamondiq.pro · MLB Hit Analytics</div>
+            </div>
+          </div>
           <button className="close-btn" onClick={onClose}><span className="material-icons">close</span></button>
         </div>
-        <div style={{ padding: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-          <canvas ref={canvasRef} style={{ borderRadius: 12, maxWidth: "100%", boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={handleDownload}>
-              <span className="material-icons">download</span>Download PNG
-            </button>
-            <button className="btn btn-sm" onClick={handleCopy} style={{ background: copied ? "var(--green-light)" : "var(--surface-2)", color: copied ? "white" : "var(--text-secondary)", border: "1px solid var(--border)" }}>
-              <span className="material-icons">{copied ? "check" : "content_copy"}</span>
-              {copied ? "Copied!" : "Copy to Clipboard"}
-            </button>
-          </div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            Share on Twitter, Discord, or your group chat
-          </div>
+        {/* Canvas preview */}
+        <div style={{ padding:"16px", background:"#060F1E", display:"flex", justifyContent:"center", alignItems:"center", flexShrink:0 }}>
+          <canvas ref={canvasRef} className="share-modal-canvas" style={{ borderRadius:10, maxWidth:"100%", height:"auto", display:"block", boxShadow:"0 4px 24px rgba(0,0,0,0.5)" }} />
+        </div>
+        {/* Actions */}
+        <div style={{ padding:"14px 20px", display:"flex", gap:8, flexWrap:"wrap", justifyContent:"center", borderTop:"1px solid var(--border)", background:"var(--surface-2)" }}>
+          <button className="btn btn-primary btn-sm" onClick={handleDownload} style={{ flex:"1", minWidth:120, justifyContent:"center" }}>
+            <span className="material-icons" style={{fontSize:15}}>download</span>Download PNG
+          </button>
+          <button className="btn btn-sm" onClick={handleCopy}
+            style={{ flex:"1", minWidth:120, justifyContent:"center", background: copied ? "rgba(74,222,128,0.15)" : "var(--surface)", border:`1px solid ${copied ? "rgba(74,222,128,0.4)" : "var(--border)"}`, color: copied ? "#4ADE80" : "var(--text-secondary)" }}>
+            <span className="material-icons" style={{fontSize:15}}>{copied ? "check" : "content_copy"}</span>
+            {copied ? "Copied!" : "Copy Image"}
+          </button>
+        </div>
+        <div style={{ padding:"8px 20px 12px", textAlign:"center", fontSize:10, color:"var(--text-muted)" }}>
+          Share on X, Discord, or your group chat 🔥
         </div>
       </div>
     </div>
