@@ -61,7 +61,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
   const [filterTier, setFilterTier] = useState("all");
   const [filterTeam, setFilterTeam] = useState("all");
   const [showBvP, setShowBvP] = useState(true);
-  const [showShare, setShowShare] = useState(false);
+  const [showShare, setShowShare] = useState(false); // kept for future use
   const [toast, setToast] = useState(null);
   const [quickTrack, setQuickTrack] = useState(null);
   const [liveStats, setLiveStats] = useState({}); // gamePk → { stats: Map, status }
@@ -620,13 +620,6 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Click any row for full breakdown</span>
-                {sorted.length > 0 && (
-                  <button className="btn btn-sm" onClick={() => setShowShare(true)}
-                    style={{ fontSize: 10, padding: "3px 10px", background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-secondary)", gap: 4 }}>
-                    <span className="material-icons" style={{ fontSize: 13 }}>share</span>
-                    Share
-                  </button>
-                )}
               </span>
             </div>
             <div className="table-wrap">
@@ -848,58 +841,6 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
         <PlayerPanel pick={selectedPlayer} onClose={() => setSelectedPlayer(null)} showBvP={showBvP} liveStats={liveStats} />
       )}
 
-      {/* Share card modal */}
-      {showShare && (() => {
-        const STORAGE_KEY = "diamondiq_picks_v1";
-        const now = new Date();
-        let todayTracked = [];
-        try {
-          const allPicks = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-          todayTracked = allPicks.filter(p => p.date === date);
-        } catch {}
-
-        // Only allow sharing picks whose games have started (prevents premium leak)
-        const lockedTracked = todayTracked.filter(tp => {
-          const match = picks.find(s => s.batter.id === tp.playerId && s.game.gamePk === tp.gamePk);
-          if (!match) {
-            // Fallback: any pick for today where the stored pick has a game that started
-            const anyMatch = picks.find(s => s.batter.id === tp.playerId);
-            return anyMatch && new Date(anyMatch.game.gameDate) <= now;
-          }
-          return new Date(match.game.gameDate) <= now;
-        });
-
-        // Map to full pick data
-        const shareData = lockedTracked
-          .map(tp => picks.find(s => s.batter.id === tp.playerId && (s.game.gamePk === tp.gamePk || !tp.gamePk)))
-          .filter(Boolean)
-          .slice(0, 5);
-
-        return shareData.length > 0 ? (
-          <ShareModal picks={shareData} mode={mode} showBvP={showBvP} onClose={() => setShowShare(false)} isPersonal />
-        ) : (
-          <div className="add-pick-modal-overlay" onClick={e => e.target === e.currentTarget && setShowShare(false)}>
-            <div className="add-pick-modal" style={{ maxWidth: 380 }}>
-              <div className="add-pick-modal-header">
-                <span style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 800, color: "white" }}>Share My Picks</span>
-                <button className="close-btn" onClick={() => setShowShare(false)}><span className="material-icons">close</span></button>
-              </div>
-              <div className="add-pick-modal-body" style={{ textAlign: "center", padding: 24 }}>
-                <span className="material-icons" style={{ fontSize: 36, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>lock_clock</span>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 6 }}>
-                  {todayTracked.length === 0 ? "No picks tracked today" : "Games haven't started yet"}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 16 }}>
-                  {todayTracked.length === 0
-                    ? "Track picks using the TRACK button on any player row, then share once games start."
-                    : `You have ${todayTracked.length} tracked pick${todayTracked.length > 1 ? "s" : ""} today. Share cards unlock once the game starts.`}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Quick Track picker */}
       {quickTrack && (() => {
         const p = quickTrack.pick;
@@ -920,6 +861,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                       playerName: p.batter.name, playerId: p.batter.id,
                       team: p.battingTeam.abbr, opponent: p.pitcher.name,
                       date: (p.game.gameDate || date).slice(0, 10),
+                      gameDate: p.game.gameDate || null,
                       hitScore: showBvP ? p.scoreData.withBvP : p.scoreData.withoutBvP,
                       prop, gamePk: p.game.gamePk,
                     });
