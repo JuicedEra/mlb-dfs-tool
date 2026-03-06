@@ -44,6 +44,21 @@ export const ACHIEVEMENTS = [
   { id: "lb1000",      cat: "board", name: "All-Time Great", threshold: 1000, description: "1000 days on leaderboard",      emoji: "👑", color: "#FFD700", bg: "rgba(255,215,0,0.2)",    border: "rgba(255,215,0,0.5)"   },
 ];
 
+// ── Starter avatars (always available, no unlock required) ────────────────
+export const STARTER_AVATARS = [
+  { id: "default_target",    name: "Analyst",     emoji: "🎯", color: "#94A3B8", bg: "rgba(148,163,184,0.15)", border: "rgba(148,163,184,0.3)" },
+  { id: "default_cap",       name: "Fan",         emoji: "🧢", color: "#60A5FA", bg: "rgba(96,165,250,0.15)",  border: "rgba(96,165,250,0.3)"  },
+  { id: "default_chart",     name: "Statistician",emoji: "📊", color: "#34D399", bg: "rgba(52,211,153,0.15)",  border: "rgba(52,211,153,0.3)"  },
+  { id: "default_dice",      name: "Gambler",     emoji: "🎲", color: "#F59E0B", bg: "rgba(245,158,11,0.15)",  border: "rgba(245,158,11,0.3)"  },
+  { id: "default_clipboard", name: "Scout",       emoji: "📋", color: "#C084FC", bg: "rgba(192,132,252,0.15)", border: "rgba(192,132,252,0.3)" },
+];
+
+// ── PRO-only avatar ───────────────────────────────────────────────────────
+export const PRO_AVATAR = { id: "pro_diamond", name: "PRO Member", emoji: "💎", color: "#F59E0B", bg: "rgba(245,158,11,0.2)", border: "rgba(245,158,11,0.5)" };
+
+// Combined list for lookup
+export const ALL_AVATARS = [...STARTER_AVATARS, PRO_AVATAR, ...ACHIEVEMENTS];
+
 export function getCurrentTier(correctPicks) {
   const pickTiers = ACHIEVEMENTS.filter(a => a.cat === "picks");
   let tier = null;
@@ -386,8 +401,8 @@ export default function ProfilePage({ isPremium, onNavigate }) {
   const [nameSaving, setNameSaving] = useState(false);
 
   const [equippedId, setEquippedId] = useState(() => {
-    try { return localStorage.getItem("diamondiq_equipped_avatar") || "rookie"; }
-    catch { return "rookie"; }
+    try { return localStorage.getItem("diamondiq_equipped_avatar") || "default_target"; }
+    catch { return "default_target"; }
   });
 
   useEffect(() => {
@@ -433,12 +448,26 @@ export default function ProfilePage({ isPremium, onNavigate }) {
   const progressToNext = nextPickAchiev ? Math.round((careerCorrect / nextPickAchiev.threshold) * 100) : 100;
 
   function handleEquip(id) {
+    // Starters always equippable
+    if (STARTER_AVATARS.find(a => a.id === id)) {
+      setEquippedId(id);
+      try { localStorage.setItem("diamondiq_equipped_avatar", id); } catch {}
+      return;
+    }
+    // PRO avatar — only if active PRO
+    if (id === PRO_AVATAR.id) {
+      if (!isPremium) return;
+      setEquippedId(id);
+      try { localStorage.setItem("diamondiq_equipped_avatar", id); } catch {}
+      return;
+    }
+    // Achievement avatar — must be unlocked
     if (!unlockedIds.has(id)) return;
     setEquippedId(id);
     try { localStorage.setItem("diamondiq_equipped_avatar", id); } catch {}
   }
 
-  const equippedAchievement = ACHIEVEMENTS.find(a => a.id === equippedId) || ACHIEVEMENTS[0];
+  const equippedAchievement = ACHIEVEMENTS.find(a => a.id === equippedId) || ALL_AVATARS.find(a => a.id === equippedId) || ALL_AVATARS[0];
   const displayName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Player";
 
   async function saveName() {
@@ -659,7 +688,46 @@ export default function ProfilePage({ isPremium, onNavigate }) {
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{unlockedIds.size}/{ACHIEVEMENTS.length} unlocked</span>
         </div>
         <div style={{ padding: "14px 20px" }}>
+
+          {/* Starter avatars — always available */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 10 }}>
+              Starter Avatars — always available
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {STARTER_AVATARS.map(a => (
+                <AchievementCard key={a.id} a={a} isUnlocked={true} isEquipped={equippedId === a.id} onEquip={handleEquip} progress={100} needed={0} />
+              ))}
+              {/* PRO avatar */}
+              <div style={{ position: "relative" }} onClick={() => isPremium && handleEquip(PRO_AVATAR.id)}>
+                <div style={{
+                  width: 86, height: 100, borderRadius: 14,
+                  cursor: isPremium ? "pointer" : "default",
+                  background: isPremium ? PRO_AVATAR.bg : "rgba(255,255,255,0.03)",
+                  border: `2px solid ${equippedId === PRO_AVATAR.id ? "#4ADE80" : isPremium ? PRO_AVATAR.border : "rgba(255,255,255,0.07)"}`,
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+                  boxShadow: equippedId === PRO_AVATAR.id ? `0 0 18px ${PRO_AVATAR.bg}` : isPremium ? `0 0 12px ${PRO_AVATAR.bg}` : "none",
+                  position: "relative", overflow: "hidden",
+                }}>
+                  <div style={{ position: "absolute", top: 5, left: 0, right: 0, textAlign: "center", fontSize: 7, fontWeight: 800, letterSpacing: "0.8px", textTransform: "uppercase", color: isPremium ? PRO_AVATAR.color : "rgba(255,255,255,0.15)", opacity: 0.7 }}>PRO</div>
+                  <span style={{ fontSize: 28, filter: isPremium ? "none" : "grayscale(1) brightness(0.3)" }}>{PRO_AVATAR.emoji}</span>
+                  <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.4px", color: isPremium ? PRO_AVATAR.color : "rgba(255,255,255,0.15)", textTransform: "uppercase", textAlign: "center", lineHeight: 1.2, padding: "0 4px" }}>{PRO_AVATAR.name}</span>
+                  <span style={{ fontSize: 8, color: isPremium ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)", fontWeight: 700 }}>PRO only</span>
+                  {equippedId === PRO_AVATAR.id && <div style={{ position: "absolute", top: 5, right: 5, width: 8, height: 8, borderRadius: "50%", background: "#4ADE80", boxShadow: "0 0 6px rgba(74,222,128,0.9)" }} />}
+                  {!isPremium && (
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}>
+                      <span className="material-icons" style={{ fontSize: 20, color: "rgba(255,255,255,0.2)" }}>workspace_premium</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Category filter */}
+          <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 10 }}>
+            Unlockable Achievements
+          </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
             {[["all","All"],["picks","Correct Picks"],["streak","Streaks"],["board","Leaderboard"]].map(([val, label]) => (
               <button key={val} className={`chip ${activeAchievCat === val ? "active" : ""}`}
@@ -690,9 +758,9 @@ export default function ProfilePage({ isPremium, onNavigate }) {
           </div>
 
           <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.1)", borderRadius: 8, fontSize: 11, color: "rgba(255,255,255,0.3)", lineHeight: 1.6 }}>
-            💡 Achievements are earned based on career totals and never reset. Click any unlocked badge to equip it as your avatar.
-            {careerStreakHigh > 0 && <span> Your career high streak is <strong style={{ color: "rgba(255,255,255,0.6)" }}>{careerStreakHigh}</strong>.</span>}
-            {lbDays > 0 && <span> You've appeared on the leaderboard <strong style={{ color: "rgba(255,255,255,0.6)" }}>{lbDays}</strong> day{lbDays !== 1 ? "s" : ""}.</span>}
+            💡 Starter avatars are free for everyone. Achievements unlock based on career totals and never reset. PRO avatar requires an active subscription. Click any available badge to equip.
+            {careerStreakHigh > 0 && <span> Career high streak: <strong style={{ color: "rgba(255,255,255,0.6)" }}>{careerStreakHigh}</strong>.</span>}
+            {lbDays > 0 && <span> Leaderboard days: <strong style={{ color: "rgba(255,255,255,0.6)" }}>{lbDays}</strong>.</span>}
           </div>
         </div>
       </div>
