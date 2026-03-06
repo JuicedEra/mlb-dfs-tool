@@ -10,6 +10,7 @@ import Backtester from "./components/tools/Backtester";
 import ABSTracker from "./components/tools/ABSTracker";
 import StreamerFinder from "./components/tools/StreamerFinder";
 import ProfilePage from "./components/tools/ProfilePage";
+import Leaderboard from "./components/tools/Leaderboard";
 import AuthModal from "./components/shared/AuthModal";
 import { fetchMLBEvents } from "./utils/propLinesApi";
 import { HAS_STRIPE, redirectToCheckout } from "./utils/stripe";
@@ -33,10 +34,11 @@ const NAV = [
     { id: "backtest", label: "Backtester",      icon: "science" },
   ]},
   { section: "My Account", items: [
-    { id: "profile",  label: "My Profile",       icon: "emoji_events" },
-    { id: "tracker",  label: "My Pick Record",   icon: "assignment_turned_in" },
-    { id: "settings", label: "Account Settings", icon: "settings" },
-    { id: "faq",      label: "Help & FAQ",        icon: "help_outline" },
+    { id: "profile",     label: "My Profile",       icon: "emoji_events" },
+    { id: "tracker",     label: "My Pick Record",   icon: "assignment_turned_in" },
+    { id: "leaderboard", label: "Leaderboard",      icon: "leaderboard" },
+    { id: "settings",    label: "Account Settings", icon: "settings" },
+    { id: "faq",         label: "Help & FAQ",        icon: "help_outline" },
   ]}
 ];
 
@@ -205,14 +207,24 @@ export default function App() {
             </div>
           ) : (
             <div style={{ position: "relative", marginLeft: 8 }}>
-              <button onClick={() => setShowUserMenu(v => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 6, background: isPremium ? "rgba(245,158,11,0.1)" : "none", border: isPremium ? "1.5px solid rgba(245,158,11,0.5)" : "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: "white", fontSize: 11, boxShadow: isPremium ? "0 0 10px rgba(245,158,11,0.15)" : "none" }}>
-                <span className="material-icons" style={{ fontSize: 16, color: isPremium ? "#F59E0B" : "white" }}>{isPremium ? "stars" : "account_circle"}</span>
-                <span style={{ maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {user.user_metadata?.full_name || user.email?.split("@")[0] || "Account"}
-                </span>
-                {isPremium && <span style={{ fontSize: 8, fontWeight: 900, background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>PRO</span>}
-              </button>
+              {(() => {
+                let equippedEmoji = "⚾";
+                try {
+                  const eqId = localStorage.getItem("diamondiq_equipped_avatar") || "rookie";
+                  const EMOJIS = { rookie:"⚾",prospect:"🔥",allstar:"⭐",veteran:"🏆",legend:"💎",diamond:"💠",centurion:"🦅",grandmaster:"👑",immortal:"🌟",streak3:"🔥",streak5:"🌶️",streak10:"⚡",streak15:"🎯",streak20:"🤖",streak25:"⚾",streak30:"🏅",streak35:"🔮",streak40:"🌠",streak45:"✨",streak50:"🏆",streak55:"💠",streak57:"💰",lb1:"📊",lb2:"📈",lb5:"🎖️",lb10:"🥊",lb20:"🔭",lb50:"🏅",lb100:"💡",lb365:"📅",lb500:"🌟",lb1000:"👑" };
+                  equippedEmoji = EMOJIS[eqId] || "⚾";
+                } catch {}
+                return (
+                  <button onClick={() => setShowUserMenu(v => !v)}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: isPremium ? "rgba(245,158,11,0.1)" : "none", border: isPremium ? "1.5px solid rgba(245,158,11,0.5)" : "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: "white", fontSize: 11, boxShadow: isPremium ? "0 0 10px rgba(245,158,11,0.15)" : "none" }}>
+                    <span style={{ fontSize: 16, lineHeight: 1 }}>{equippedEmoji}</span>
+                    <span style={{ maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {user.user_metadata?.full_name || user.email?.split("@")[0] || "Account"}
+                    </span>
+                    {isPremium && <span style={{ fontSize: 8, fontWeight: 900, background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#0A2342", padding: "2px 6px", borderRadius: 4 }}>PRO</span>}
+                  </button>
+                );
+              })()}
               {showUserMenu && (
                 <>
                   <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowUserMenu(false)} />
@@ -313,8 +325,9 @@ export default function App() {
             {activeTool === "parks"    && <ParkFactors />}
             {activeTool === "statcast" && <StatcastTool />}
             {activeTool === "backtest" && <Backtester isPremium={isPremium} onUpgrade={handleUpgrade} />}
-            {activeTool === "profile"  && <ProfilePage isPremium={isPremium} />}
-            {activeTool === "tracker"  && <PickTracker />}
+            {activeTool === "profile"     && <ProfilePage isPremium={isPremium} onNavigate={setActiveTool} />}
+            {activeTool === "tracker"     && <PickTracker />}
+            {activeTool === "leaderboard" && <Leaderboard isPremium={isPremium} onNavigate={setActiveTool} />}
             {activeTool === "settings" && <AccountSettings isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "faq"      && <FAQPage isPremium={isPremium} onUpgrade={handleUpgrade} />}
             <AppFooter />
