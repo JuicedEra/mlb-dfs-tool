@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchGames, fetchRoster, searchPlayers, headshot, fetchGameLog, fetchSeasonStats, computeSplit, computeActiveStreak } from "../../utils/mlbApi";
-import { dbLoadPicks, dbSavePick, dbUpdatePickResult, dbDeletePick } from "../../utils/supabase";
+import { dbLoadPicks, dbSavePick, dbUpdatePickResult, dbDeletePick, getEquippedEmoji } from "../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 
 const STORAGE_KEY  = "diamondiq_picks_v1";
@@ -510,7 +510,10 @@ export default function PickTracker() {
     <div>
       <div className="page-header">
         <div className="page-title-group">
-          <h1 className="page-title">My Pick Record</h1>
+          <h1 className="page-title">
+            <span style={{ marginRight: 8, fontSize: 22 }}>{getEquippedEmoji()}</span>
+            My Pick Record
+          </h1>
           <p className="page-subtitle">
             BTS-style tracking · Max 2 picks/day · Both must hit to extend streak
           </p>
