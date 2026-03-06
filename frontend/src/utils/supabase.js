@@ -204,18 +204,26 @@ export async function btRecordUsage(userId) {
 // Shared lookup so header, pick tracker, and leaderboard all stay in sync.
 
 export const ACHIEVEMENT_EMOJIS = {
-  rookie:"⚾", prospect:"🔥", allstar:"⭐", veteran:"🏆", legend:"💎",
+  // Starter avatars (always available)
+  default_target:"🎯", default_cap:"🧢", default_chart:"📊",
+  default_dice:"🎲", default_clipboard:"📋",
+  // PRO-only
+  pro_diamond:"💎",
+  // Picks unlocks
+  rookie:"⚾", prospect:"🔥", allstar:"⭐", veteran:"🏆", legend:"🏆",
   diamond:"💠", centurion:"🦅", grandmaster:"👑", immortal:"🌟",
+  // Streak unlocks
   streak3:"🔥", streak5:"🌶️", streak10:"⚡", streak15:"🎯", streak20:"🤖",
   streak25:"⚾", streak30:"🏅", streak35:"🔮", streak40:"🌠", streak45:"✨",
   streak50:"🏆", streak55:"💠", streak57:"💰",
+  // Leaderboard unlocks
   lb1:"📊", lb2:"📈", lb5:"🎖️", lb10:"🥊", lb20:"🔭",
   lb50:"🏅", lb100:"💡", lb365:"📅", lb500:"🌟", lb1000:"👑",
 };
 
 export function getEquippedEmoji() {
   try {
-    const id = localStorage.getItem("diamondiq_equipped_avatar") || "rookie";
-    return ACHIEVEMENT_EMOJIS[id] || "⚾";
-  } catch { return "⚾"; }
+    const id = localStorage.getItem("diamondiq_equipped_avatar") || "default_target";
+    return ACHIEVEMENT_EMOJIS[id] || "🎯";
+  } catch { return "🎯"; }
 }
