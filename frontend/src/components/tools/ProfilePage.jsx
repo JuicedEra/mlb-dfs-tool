@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { dbLoadPicks, dbLoadLeaderboardDays, supabase } from "../../utils/supabase";
+import { LeaderboardSummary } from "./Leaderboard";
 
 const CURRENT_SEASON = new Date().getFullYear();
 
@@ -370,7 +371,7 @@ function MonthlyCalendar({ months }) {
 }
 
 // ── Main ProfilePage ───────────────────────────────────────────────────────
-export default function ProfilePage({ isPremium }) {
+export default function ProfilePage({ isPremium, onNavigate }) {
   const { user } = useAuth();
   const userId = user?.id || null;
 
@@ -452,8 +453,8 @@ export default function ProfilePage({ isPremium }) {
     ? ACHIEVEMENTS
     : ACHIEVEMENTS.filter(a => a.cat === activeAchievCat);
 
-  // Available seasons
-  const seasons = ["career"];
+  // Available seasons — always include current season
+  const seasons = ["career", String(CURRENT_SEASON)];
   const pickYears = [...new Set(picks.map(p => p.date?.slice(0, 4)).filter(Boolean))].sort().reverse();
   pickYears.forEach(y => { if (!seasons.includes(y)) seasons.push(y); });
 
@@ -625,6 +626,9 @@ export default function ProfilePage({ isPremium }) {
           )}
         </div>
       </div>
+
+      {/* Leaderboard summary */}
+      <LeaderboardSummary userId={userId} onNavigate={onNavigate} />
 
       {/* Top players */}
       {stats.topPlayers.length > 0 && (
