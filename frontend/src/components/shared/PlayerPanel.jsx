@@ -190,7 +190,7 @@ export default function PlayerPanel({ pick, onClose, showBvP = true, liveStats }
                     </div>
                   )}
                   <div className="section-label">Recent Form</div>
-                  <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 18 }}>
+                  <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", marginBottom: 18 }}>
                     {[["L3 AVG", l3?.avg],["L7 AVG", l7?.avg],["L15 AVG", l15?.avg],["Season AVG", season?.avg]].map(([label, val]) => (
                       <div key={label} className="stat-box">
                         <div className="stat-box-label">{label}</div>
@@ -260,8 +260,8 @@ export default function PlayerPanel({ pick, onClose, showBvP = true, liveStats }
               {activeTab === "gamelog" && (
                 <>
                   <div className="section-label">Last 30 Games</div>
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ fontSize: 12 }}>
+                  <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginLeft: -4, marginRight: -4 }}>
+                    <table style={{ fontSize: 12, minWidth: 380 }}>
                       <thead>
                         <tr>
                           <th>Date</th><th>Opp</th><th>H/A</th>
