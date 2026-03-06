@@ -716,7 +716,7 @@ tbody td { padding: 10px 13px; vertical-align: middle; }
 @keyframes fadeOverlay { from { opacity: 0; } to { opacity: 1; } }
 .side-panel {
   width: min(560px, 95vw); height: 100vh; background: var(--surface);
-  box-shadow: var(--shadow-lg); overflow-y: auto;
+  box-shadow: var(--shadow-lg); overflow-y: auto; overflow-x: hidden;
   animation: slidePanel 0.25s cubic-bezier(0.4,0,0.2,1);
   display: flex; flex-direction: column;
 }
@@ -889,14 +889,17 @@ tbody td { padding: 10px 13px; vertical-align: middle; }
 .add-pick-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,10,30,0.50);
   z-index: 500; display: flex; align-items: center; justify-content: center;
-  animation: fadeOverlay 0.2s ease;
+  animation: fadeOverlay 0.2s ease; padding: 16px; box-sizing: border-box;
+  overflow-y: auto;
 }
 .add-pick-modal {
   background: var(--surface); border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg); width: min(480px, 94vw);
   animation: scaleIn 0.2s cubic-bezier(0.4,0,0.2,1);
   overflow: hidden;
+  max-height: 92dvh; display: flex; flex-direction: column;
 }
+.add-pick-modal-body { overflow-y: auto; }
 @keyframes scaleIn { from { transform: scale(0.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .add-pick-modal-header {
   background: var(--navy); padding: 18px 22px;
@@ -1080,7 +1083,20 @@ tbody td { padding: 10px 13px; vertical-align: middle; }
   .pick-score { font-size: 28px; }
 
   .form-row { grid-template-columns: 1fr; }
-  .add-pick-modal { width: calc(100vw - 20px); max-width: none; margin: 10px; }
+  .add-pick-modal { width: calc(100vw - 20px); max-width: none; margin: 10px; max-height: 88dvh; }
+
+  /* Side panel: full-screen on mobile */
+  .side-panel { width: 100vw !important; height: 100dvh; }
+  .side-panel-body { padding: 14px 16px; overflow-x: hidden; }
+  .side-panel-header { padding: 14px 16px; }
+
+  /* Side panel inner tables — scroll horizontally */
+  .side-panel .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .side-panel table { min-width: 420px; font-size: 11px; }
+
+  /* Share modal canvas — scale down to fit */
+  .share-modal-canvas { max-width: 100% !important; height: auto !important; }
+
 
   /* Landing page: stack on mobile */
   .landing-hero-grid { grid-template-columns: 1fr !important; }
