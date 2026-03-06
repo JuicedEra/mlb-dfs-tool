@@ -11,8 +11,6 @@ export const supabase = HAS_AUTH
   : null;
 
 // ── Pick Tracker: Supabase-backed persistence ─────────────────────────────
-// Falls back to localStorage when Supabase is unavailable.
-
 const LOCAL_KEY = "diamondiq_picks_v1";
 
 function localLoad() {
@@ -42,22 +40,23 @@ export async function dbLoadPicks(userId) {
 
 /** Save a single pick. Returns saved pick or null. */
 export async function dbSavePick(userId, pick) {
+  const season = new Date(pick.gameDate || new Date()).getFullYear();
   const row = {
-    user_id:    userId,
-    player_id:  pick.playerId,
-    player_name:pick.playerName,
-    game_pk:    pick.gamePk,
-    game_date:  pick.gameDate,
-    score:      pick.score,
-    tier:       pick.tier,
-    mode:       pick.mode || "bts",
-    result:     pick.result || "pending",   // "hit" | "out" | "pending"
-    hits:       pick.hits   ?? null,
-    at_bats:    pick.atBats ?? null,
-    picked_at:  pick.pickedAt || new Date().toISOString(),
+    user_id:     userId,
+    player_id:   pick.playerId,
+    player_name: pick.playerName,
+    game_pk:     pick.gamePk,
+    game_date:   pick.gameDate,
+    score:       pick.score,
+    tier:        pick.tier,
+    mode:        pick.mode || "bts",
+    result:      pick.result || "pending",
+    hits:        pick.hits   ?? null,
+    at_bats:     pick.atBats ?? null,
+    picked_at:   pick.pickedAt || new Date().toISOString(),
+    season,
   };
   if (!supabase || !userId) {
-    // localStorage fallback
     const existing = localLoad();
     const merged = [row, ...existing.filter(p => !(p.player_id === row.player_id && p.game_date === row.game_date))];
     localSave(merged);
@@ -119,10 +118,38 @@ export async function dbDeletePick(userId, playerId, gameDate) {
   }
 }
 
-// ── Backtester usage tracking ─────────────────────────────────────────────
-// Free users: 5 backtests per rolling 7-day window.
-// Stored in `backtester_usage` table. Falls back to localStorage.
+// ── Leaderboard appearances ───────────────────────────────────────────────
 
+/** Record that a user appeared on the leaderboard today. */
+export async function dbRecordLeaderboardAppearance(userId, rank) {
+  if (!supabase || !userId) return;
+  const today = new Date().toLocaleDateString("en-CA");
+  try {
+    await supabase
+      .from("leaderboard_appearances")
+      .upsert({ user_id: userId, appearance_date: today, rank }, { onConflict: "user_id,appearance_date" });
+  } catch (e) {
+    console.warn("dbRecordLeaderboardAppearance error:", e.message);
+  }
+}
+
+/** Load total leaderboard appearance count for a user. */
+export async function dbLoadLeaderboardDays(userId) {
+  if (!supabase || !userId) return 0;
+  try {
+    const { count, error } = await supabase
+      .from("leaderboard_appearances")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    if (error) throw error;
+    return count ?? 0;
+  } catch (e) {
+    console.warn("dbLoadLeaderboardDays error:", e.message);
+    return 0;
+  }
+}
+
+// ── Backtester usage tracking ─────────────────────────────────────────────
 const BT_LOCAL_KEY = "diamondiq_bt_usage";
 
 function btLocalLoad() {
