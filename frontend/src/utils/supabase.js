@@ -199,3 +199,23 @@ export async function btRecordUsage(userId) {
     console.warn("btRecordUsage error:", e.message);
   }
 }
+
+// ── Equipped avatar helper ────────────────────────────────────────────────
+// Shared lookup so header, pick tracker, and leaderboard all stay in sync.
+
+export const ACHIEVEMENT_EMOJIS = {
+  rookie:"⚾", prospect:"🔥", allstar:"⭐", veteran:"🏆", legend:"💎",
+  diamond:"💠", centurion:"🦅", grandmaster:"👑", immortal:"🌟",
+  streak3:"🔥", streak5:"🌶️", streak10:"⚡", streak15:"🎯", streak20:"🤖",
+  streak25:"⚾", streak30:"🏅", streak35:"🔮", streak40:"🌠", streak45:"✨",
+  streak50:"🏆", streak55:"💠", streak57:"💰",
+  lb1:"📊", lb2:"📈", lb5:"🎖️", lb10:"🥊", lb20:"🔭",
+  lb50:"🏅", lb100:"💡", lb365:"📅", lb500:"🌟", lb1000:"👑",
+};
+
+export function getEquippedEmoji() {
+  try {
+    const id = localStorage.getItem("diamondiq_equipped_avatar") || "rookie";
+    return ACHIEVEMENT_EMOJIS[id] || "⚾";
+  } catch { return "⚾"; }
+}
