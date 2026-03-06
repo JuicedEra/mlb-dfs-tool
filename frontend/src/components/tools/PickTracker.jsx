@@ -215,21 +215,34 @@ function PickShareModal({ pick, onClose }) {
   }
 
   return (
-    <div style={{ position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",padding:24 }}
+    <div style={{ position:"fixed",inset:0,zIndex:600,background:"rgba(0,8,20,0.88)",display:"flex",alignItems:"center",justifyContent:"center",padding:"16px",boxSizing:"border-box",overflowY:"auto" }}
       onClick={e => e.target===e.currentTarget && onClose()}>
-      <div style={{ background:"var(--surface)",borderRadius:16,border:"1px solid var(--border)",padding:24,maxWidth:580,width:"100%" }}>
-        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16 }}>
-          <span style={{ fontFamily:"var(--font-display)",fontSize:16,fontWeight:800,color:"var(--text-primary)" }}>Share Pick</span>
+      <div style={{ background:"var(--surface)",borderRadius:16,border:"1px solid var(--border)",width:"min(560px, 100%)",overflow:"hidden",boxShadow:"0 24px 64px rgba(0,0,0,0.6)",display:"flex",flexDirection:"column" }}>
+        {/* Header */}
+        <div style={{ background:"var(--navy)",padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+            <div style={{ width:28,height:28,borderRadius:6,background:"#15803D",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <span style={{ fontWeight:900,fontSize:11,color:"white" }}>IQ</span>
+            </div>
+            <div>
+              <div style={{ fontFamily:"var(--font-display)",fontSize:14,fontWeight:800,color:"white" }}>Share Pick</div>
+              <div style={{ fontSize:9,color:"rgba(255,255,255,0.35)" }}>diamondiq.pro</div>
+            </div>
+          </div>
           <button className="close-btn" onClick={onClose}><span className="material-icons">close</span></button>
         </div>
-        <canvas ref={canvasRef} style={{ borderRadius:10,width:"100%",maxWidth:520,display:"block",margin:"0 auto 16px" }} />
-        <div style={{ display:"flex",gap:10,justifyContent:"center" }}>
-          <button className="btn btn-primary btn-sm" onClick={handleCopy}>
+        {/* Canvas preview */}
+        <div style={{ padding:"14px",background:"#060F1E",display:"flex",justifyContent:"center",flexShrink:0 }}>
+          <canvas ref={canvasRef} className="share-modal-canvas" style={{ borderRadius:8,maxWidth:"100%",height:"auto",display:"block",boxShadow:"0 4px 20px rgba(0,0,0,0.5)" }} />
+        </div>
+        {/* Actions */}
+        <div style={{ padding:"12px 18px",display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center",borderTop:"1px solid var(--border)",background:"var(--surface-2)" }}>
+          <button className="btn btn-primary btn-sm" onClick={handleCopy} style={{ flex:1,minWidth:110,justifyContent:"center" }}>
             <span className="material-icons" style={{fontSize:15}}>{copied?"check":"content_copy"}</span>
             {copied ? "Copied!" : "Copy Image"}
           </button>
           <button className="btn btn-sm" onClick={() => { const l=document.createElement("a"); l.download=`pick-${pick.playerName.replace(/ /g,"-")}.png`; l.href=canvasRef.current.toDataURL(); l.click(); }}
-            style={{background:"var(--surface-2)",border:"1px solid var(--border)",color:"var(--text-secondary)"}}>
+            style={{ flex:1,minWidth:110,justifyContent:"center",background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text-secondary)" }}>
             <span className="material-icons" style={{fontSize:15}}>download</span>Download
           </button>
         </div>
