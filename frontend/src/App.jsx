@@ -11,6 +11,7 @@ import ABSTracker from "./components/tools/ABSTracker";
 import StreamerFinder from "./components/tools/StreamerFinder";
 import ProfilePage from "./components/tools/ProfilePage";
 import Leaderboard from "./components/tools/Leaderboard";
+import FiftySevenKiller from "./components/tools/FiftySevenKiller";
 import AuthModal from "./components/shared/AuthModal";
 import { fetchMLBEvents } from "./utils/propLinesApi";
 import { HAS_STRIPE, redirectToCheckout } from "./utils/stripe";
@@ -23,6 +24,7 @@ const CONTACT_EMAIL = "diamondiqinfo@gmail.com";
 const NAV = [
   { section: "Today", items: [
     { id: "picks",    label: "Today's Picks",   icon: "auto_awesome",       badge: "LIVE" },
+    { id: "57killer", label: "57 Killer",        icon: "bolt",               badge: "NEW"  },
     { id: "research", label: "Player Research",  icon: "manage_search" },
     { id: "pitchers", label: "Pitcher Intel",    icon: "sports_baseball",    pro: true },
     { id: "abs",      label: "ABS Challenges",   icon: "gavel",              pro: true, badge: "NEW" },
@@ -318,6 +320,7 @@ export default function App() {
           </aside>
           <main className="main-content">
             {activeTool === "picks"    && <TodaysPicks mode={mode} isPremium={isPremium} onUpgrade={handleUpgrade} />}
+            {activeTool === "57killer" && <FiftySevenKiller mode={mode} isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "research" && <ResearchHub isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "pitchers" && <PitcherIntel isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "abs"      && <ABSTracker />}
