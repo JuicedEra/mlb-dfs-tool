@@ -8,6 +8,7 @@ import {
 import { compute56KillerScore } from "./FiftySixKiller";
 import { btGetWeeklyUsage, btRecordUsage } from "../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
+import PlayerPanel from "../shared/PlayerPanel";
 
 const FREE_WEEKLY_LIMIT = 3;
 
@@ -50,6 +51,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
   const [results, setResults]     = useState(null);
   const [resultsAlgoMode, setResultsAlgoMode] = useState(null); // algo mode the results were actually run with
   const [weeklyUsage, setWeeklyUsage] = useState(0);
+  const [panelPick, setPanelPick] = useState(null); // PlayerPanel target
   const abortRef = useRef(false);
 
   // Load weekly usage count on mount
@@ -445,7 +447,18 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                         <td colSpan={6} style={{ color: "var(--text-muted)", fontSize: 12 }}>{day.note || "No data"}</td>
                       </tr>
                     ) : day.picks.map((p, pi) => (
-                      <tr key={`${day.date}-${pi}`}>
+                      <tr
+                        key={`${day.date}-${pi}`}
+                        onClick={() => setPanelPick({
+                          batter:  { id: p.batterId, name: p.batterName, batSide: "?" },
+                          pitcher: p.pitcherId ? { id: p.pitcherId, name: p.pitcherName, hand: p.pitcherHand ?? "R" } : null,
+                          game:    { gamePk: p.gamePk, venue: p.venue ?? "" },
+                          scoreData: null,
+                        })}
+                        style={{ cursor: "pointer" }}
+                        onMouseEnter={e => { e.currentTarget.style.background = "var(--surface-2)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = ""; }}
+                      >
                         {pi === 0 && <td rowSpan={day.picks.length} style={{ fontFamily: "var(--font-mono)", fontSize: 12, verticalAlign: "top" }}>{day.date}</td>}
                         {resultsAlgoMode === "both" && (
                           <td>
@@ -488,6 +501,16 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
           <div className="empty-title">No backtest results yet</div>
           <div className="empty-sub">Select a date range and click "Run Backtest" to evaluate the algorithm against real outcomes</div>
         </div>
+      )}
+
+      {/* Player Info Panel */}
+      {panelPick && (
+        <PlayerPanel
+          pick={panelPick}
+          onClose={() => setPanelPick(null)}
+          showBvP={false}
+          liveStats={null}
+        />
       )}
     </div>
   );
@@ -587,7 +610,7 @@ async function scoreBatter({ batter, lineupPos, pitcher, game, battingTeam, pitc
     return {
       batterId: batter.id, batterName: batter.name,
       pitcherId: pitcher.id, pitcherName: pitcher.name, pitcherHand: pitcher.hand,
-      teamAbbr: battingTeam.abbr, gamePk: game.gamePk,
+      teamAbbr: battingTeam.abbr, gamePk: game.gamePk, venue: game.venue ?? "",
       score: scoreData.score, tier: scoreData.tier, hasBvP,
     };
   } catch { return null; }
@@ -656,7 +679,7 @@ async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam
     return {
       batterId: batter.id, batterName: batter.name,
       pitcherId: pitcher.id, pitcherName: pitcher.name, pitcherHand: pitcher.hand || "R",
-      teamAbbr: battingTeam.abbr, gamePk: game.gamePk,
+      teamAbbr: battingTeam.abbr, gamePk: game.gamePk, venue: game.venue ?? "",
       score: confidence,
       // Normalize tier label to match existing tierClass/tierBadgeLabel helpers
       tier: tier.label === "ELITE"  ? "elite"
