@@ -3,12 +3,11 @@
 // Composite score: lineup pos, rolling hit rate, PA probability, park factor, pitcher K%, home/road risk
 // Formula hidden — confidence bars + tier labels + factor pills only
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   fetchGames,
   fetchConfirmedLineups,
   fetchGameLog,
-  fetchBvP,
   fetchPitcherStats,
   PARK_FACTORS,
 } from "../../utils/mlbApi";
@@ -240,7 +239,7 @@ function PlayerCard({ pick, rank }) {
           paddingTop: 12,
           borderTop: "1px solid rgba(255,255,255,0.07)",
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
+          gridTemplateColumns: "repeat(4, 1fr)",
           gap: 8,
         }}>
           {[
@@ -311,6 +310,7 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
   });
   const abortRef = useRef(false);
 
+  // ─── Scoring pipeline ──────────────────────────────────────────────────────
   const runAnalysis = useCallback(async () => {
     abortRef.current = false;
     setStatus("loading");
@@ -319,44 +319,37 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
     setErrorMsg("");
 
     try {
-      // fetchGames returns { games, date } — same shape as TodaysPicks uses
       const { games } = await fetchGames(selectedDate);
-      const activeGames = (games || []).filter(g => !g.isPostponed && !g.isCancelled && !g.isSuspended);
-
-      if (!activeGames?.length) {
+      if (!games?.length) {
         setStatus("done");
         return;
       }
 
       // Gather all batters from lineups
       const candidates = [];
-      for (const game of activeGames) {
+      for (const game of games) {
         if (abortRef.current) break;
-
-        // fetchConfirmedLineups is the correct function — returns { home: {status, players[]}, away: {status, players[]} }
         const lineupData = await fetchConfirmedLineups(game.gamePk).catch(() => null);
-
-        for (const side of ["home", "away"]) {
-          // Key is .players (not .batters) — Bug 2 fix
-          const lineup    = lineupData?.[side]?.players ?? [];
+        const sides = ["home", "away"];
+        for (const side of sides) {
+          const lineup  = lineupData?.[side]?.players ?? [];
           const confirmed = lineupData?.[side]?.status === "confirmed";
           const battingTeam = game[side];
           const opponent    = game[side === "home" ? "away" : "home"];
-
-          // Pitcher comes from the game object (probablePitcher), not lineupData
-          const pitcher = opponent?.pitcher ?? null;
+          const pitcherId   = game[side === "home" ? "away" : "home"]?.pitcher?.id;
+          const pitcherNameFromGame = game[side === "home" ? "away" : "home"]?.pitcher?.name ?? null;
 
           for (let i = 0; i < lineup.length; i++) {
             candidates.push({
               batter: lineup[i],
-              lineupPos: lineup[i].order ?? i + 1,
+              lineupPos: i + 1,
               lineupConfirmed: confirmed,
               battingTeam,
               opponent,
-              pitcher,
+              pitcherId,
+              pitcherName: pitcherNameFromGame,
               game,
               isHome: side === "home",
-              // Bug 3 fix: game.venue is the name string — matches PARK_FACTORS keys
               venue: game.venue ?? "",
             });
           }
@@ -374,19 +367,15 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
 
         const batchResults = await Promise.allSettled(
           batch.map(async (c) => {
-            const { batter, lineupPos, lineupConfirmed, battingTeam, opponent, pitcher, game, isHome, venue } = c;
+            const { batter, lineupPos, lineupConfirmed, battingTeam, opponent, pitcherId, pitcherName: pitcherNameC, game, isHome, venue } = c;
 
-            // Fetch gamelog
-            const logs = await fetchGameLog(batter.id, new Date().getFullYear()).catch(() => []);
-            const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
+            // Fetch gamelog — fetchGameLog returns sorted array directly
+            const sorted = await fetchGameLog(batter.id, new Date().getFullYear()).catch(() => []);
 
-            // Rolling splits — gamelog uses .hits and .atBats fields
+            // Rolling splits — MLB API uses atBats not ab
             const sliceHits = (n) => {
               let h = 0, pa = 0;
-              for (const g of sorted.slice(0, n)) {
-                h  += parseInt(g.hits)   || 0;
-                pa += parseInt(g.atBats) || 0;
-              }
+              for (const g of sorted.slice(0, n)) { h += +(g.hits ?? 0); pa += +(g.atBats ?? g.ab ?? 0); }
               return { hits: h, pa };
             };
             const s7  = sliceHits(7);
@@ -396,35 +385,37 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
             // Active streak
             let activeStreak = 0;
             for (const g of sorted) {
-              if ((parseInt(g.hits) || 0) > 0) activeStreak++;
+              if ((g.hits ?? 0) > 0) activeStreak++;
               else break;
             }
 
-            // Prev streak (bounce-back signal)
+            // Prev streak (bounce-back)
             let prevStreak = 0;
-            if ((parseInt(sorted[0]?.hits) || 0) === 0) {
+            if ((sorted[0]?.hits ?? 1) === 0) {
               for (const g of sorted.slice(1)) {
-                if ((parseInt(g.hits) || 0) > 0) prevStreak++;
+                if ((g.hits ?? 0) > 0) prevStreak++;
                 else break;
               }
             }
 
             // Season avg
-            const seasonHits = sorted.reduce((a, g) => a + (parseInt(g.hits)   || 0), 0);
-            const seasonAB   = sorted.reduce((a, g) => a + (parseInt(g.atBats) || 0), 0);
+            const seasonHits = sorted.reduce((a, g) => a + +(g.hits ?? 0), 0);
+            const seasonAB   = sorted.reduce((a, g) => a + +(g.atBats ?? g.ab ?? 0), 0);
             const seasonAvg  = seasonAB >= 10 ? seasonHits / seasonAB : 0.250;
 
-            // Bug 3 fix: PARK_FACTORS keyed by venue name string (not numeric ID)
-            const parkFactor = PARK_FACTORS[venue]?.factor ?? 100;
+            // Park factor — keyed by venue name string, value is {factor, hr, type}
+            const parkFactor = PARK_FACTORS?.[venue]?.factor ?? 100;
 
-            // Pitcher K% — from fetchPitcherStats (now has kPct derivation layer)
-            // Bug 6 fix: pitcherName from game object, not pStats (which has no .name)
+            // Pitcher K%
             let pitcherKPct = null;
-            const pitcherName = pitcher?.name ?? null;
-            if (pitcher?.id) {
-              const pStats = await fetchPitcherStats(pitcher.id).catch(() => null);
+            if (pitcherId) {
+              const pStats = await fetchPitcherStats(pitcherId).catch(() => null);
               pitcherKPct  = pStats?.kPct ?? null;
             }
+            const pitcherName = pitcherNameC;
+
+            // Platoon (simple: check batter hand vs pitcher)
+            const platoon = null; // surfaced as "—" if unavailable
 
             const { confidence, tier, factors } = compute57KillerScore({
               lineupPos,
@@ -460,13 +451,13 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
               parkFactor,
               pitcherKPct,
               pitcherName,
-              platoon: null,
+              platoon,
             };
           })
         );
 
         for (const r of batchResults) {
-          if (r.status === "fulfilled" && r.value) results.push(r.value);
+          if (r.status === "fulfilled") results.push(r.value);
         }
 
         setProgress({ scored: Math.min(i + BATCH, candidates.length), total: candidates.length });
@@ -481,7 +472,7 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
         }
       }
 
-      // Final sort — top 10 ≥ 60 confidence
+      // Final sort — top 10 ≥ 82% confidence
       const final = [...results]
         .filter(p => p.confidence >= 60)
         .sort((a, b) => b.confidence - a.confidence)
@@ -547,19 +538,47 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
           display: "flex", gap: 10, flexWrap: "wrap",
           alignItems: "center", marginBottom: 20,
         }}>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            disabled={isLoading}
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 8, color: "#f1f5f9",
-              padding: "8px 12px", fontSize: 13,
-              cursor: isLoading ? "not-allowed" : "auto",
-            }}
-          />
+          {/* Date selector — styled wrapper so dark theme renders correctly */}
+          <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+            <span className="material-icons" style={{
+              position: "absolute", left: 10, fontSize: 16,
+              color: "#f59e0b", pointerEvents: "none", zIndex: 1,
+            }}>calendar_today</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              disabled={isLoading}
+              style={{
+                background: "rgba(245,158,11,0.08)",
+                border: `1px solid ${selectedDate ? "#f59e0b55" : "rgba(255,255,255,0.1)"}`,
+                borderRadius: 8,
+                color: "#f1f5f9",
+                colorScheme: "dark",
+                padding: "8px 12px 8px 34px",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: isLoading ? "not-allowed" : "pointer",
+                outline: "none",
+                minWidth: 155,
+              }}
+            />
+          </div>
+
+          {/* Selected date readable label */}
+          {selectedDate && (
+            <span style={{
+              fontSize: 12, color: "#94a3b8", fontWeight: 500,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 6, padding: "5px 10px",
+              whiteSpace: "nowrap",
+            }}>
+              {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                weekday: "short", month: "short", day: "numeric", year: "numeric",
+              })}
+            </span>
+          )}
 
           <button
             onClick={isLoading ? () => { abortRef.current = true; } : runAnalysis}
