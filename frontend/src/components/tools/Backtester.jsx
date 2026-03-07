@@ -48,6 +48,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
   const [running, setRunning]     = useState(false);
   const [progress, setProgress]   = useState({ day: "", done: 0, total: 0, msg: "" });
   const [results, setResults]     = useState(null);
+  const [resultsAlgoMode, setResultsAlgoMode] = useState(null); // algo mode the results were actually run with
   const [weeklyUsage, setWeeklyUsage] = useState(0);
   const abortRef = useRef(false);
 
@@ -215,6 +216,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
       days: dayResults,
       summary: { totalPicks, wins, losses, unknown, winRate: totalPicks - unknown > 0 ? ((wins / (wins + losses)) * 100).toFixed(1) : "—", tierHits },
     });
+    setResultsAlgoMode(algoMode); // lock the display label to what was actually run
     setProgress(p => ({ ...p, done: days.length, msg: "Complete" }));
     setRunning(false);
   }
@@ -368,14 +370,26 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
       {/* Results */}
       {results && (
         <>
+          {/* Stale results warning — shown when algo mode has changed since last run */}
+          {resultsAlgoMode && resultsAlgoMode !== algoMode && (
+            <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, display: "flex", alignItems: "center", gap: 8,
+              background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 12 }}>
+              <span className="material-icons" style={{ fontSize: 15, color: "var(--yellow)", flexShrink: 0 }}>refresh</span>
+              <span style={{ color: "var(--text-secondary)" }}>
+                Results below are from the <strong>{resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "57 Killer" : "Both"}</strong> run.
+                Re-run to see <strong>{algoMode === "iq" ? "IQ Picks" : algoMode === "killer" ? "57 Killer" : "Both"}</strong> results.
+              </span>
+            </div>
+          )}
+
           {/* Summary Cards */}
           <div className="section-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             Summary
             <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
-              background: algoMode === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
-              color: algoMode === "killer" ? "var(--yellow)" : "var(--green-light)",
-              border: `1px solid ${algoMode === "killer" ? "rgba(245,158,11,0.3)" : "rgba(74,222,128,0.2)"}` }}>
-              {algoMode === "iq" ? "IQ Picks" : algoMode === "killer" ? "57 Killer" : "IQ Picks + 57 Killer"}
+              background: resultsAlgoMode === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
+              color: resultsAlgoMode === "killer" ? "var(--yellow)" : "var(--green-light)",
+              border: `1px solid ${resultsAlgoMode === "killer" ? "rgba(245,158,11,0.3)" : "rgba(74,222,128,0.2)"}` }}>
+              {resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "57 Killer" : "IQ Picks + 57 Killer"}
             </span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
@@ -414,7 +428,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                 <thead>
                   <tr>
                     <th>Date</th>
-                    {algoMode === "both" && <th>Algo</th>}
+                    {resultsAlgoMode === "both" && <th>Algo</th>}
                     <th>Pick</th>
                     <th>Team</th>
                     <th>vs SP</th>
@@ -433,7 +447,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                     ) : day.picks.map((p, pi) => (
                       <tr key={`${day.date}-${pi}`}>
                         {pi === 0 && <td rowSpan={day.picks.length} style={{ fontFamily: "var(--font-mono)", fontSize: 12, verticalAlign: "top" }}>{day.date}</td>}
-                        {algoMode === "both" && (
+                        {resultsAlgoMode === "both" && (
                           <td>
                             <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4,
                               background: p.algo === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
