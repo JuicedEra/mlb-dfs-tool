@@ -11,7 +11,7 @@ import ABSTracker from "./components/tools/ABSTracker";
 import StreamerFinder from "./components/tools/StreamerFinder";
 import ProfilePage from "./components/tools/ProfilePage";
 import Leaderboard from "./components/tools/Leaderboard";
-import FiftySevenKiller from "./components/tools/FiftySevenKiller";
+import FiftySixKiller from "./components/tools/FiftySixKiller";
 import AuthModal from "./components/shared/AuthModal";
 import { fetchMLBEvents } from "./utils/propLinesApi";
 import { HAS_STRIPE, redirectToCheckout } from "./utils/stripe";
@@ -24,7 +24,7 @@ const CONTACT_EMAIL = "diamondiqinfo@gmail.com";
 const NAV = [
   { section: "Today", items: [
     { id: "picks",    label: "Today's Picks",   icon: "IQ",  iconType: "text",    badge: "LIVE" },
-    { id: "57killer", label: "57 Killer",        icon: "bolt",               badge: "NEW"  },
+    { id: "57killer", label: "56 Killer",        icon: "56", iconType: "text56",     badge: "NEW"  },
     { id: "research", label: "Player Research",  icon: "manage_search" },
     { id: "pitchers", label: "Pitcher Intel",    icon: "sports_baseball",    pro: true },
     { id: "abs",      label: "ABS Challenges",   icon: "gavel",              pro: true, badge: "NEW" },
@@ -272,6 +272,13 @@ export default function App() {
                     onClick={() => handleNavClick(item.id)}>
                     {item.iconType === "text"
                       ? <span className="nav-icon" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, fontSize: 10, fontWeight: 900, letterSpacing: "-0.5px", fontFamily: "var(--font-display)", borderRadius: 4, background: activeTool === item.id ? "var(--accent)" : "rgba(10,110,75,0.18)", color: activeTool === item.id ? "#fff" : "var(--accent-light)", flexShrink: 0 }}>{item.icon}</span>
+                      : item.iconType === "text56"
+                      ? <svg className="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0 }}>
+                          <rect width="20" height="20" rx="4" fill={activeTool === item.id ? "var(--accent)" : "rgba(245,158,11,0.18)"} />
+                          <text x="10" y="14" textAnchor="middle" fontSize="8.5" fontWeight="900"
+                            fontFamily="'Inter', sans-serif" fill={activeTool === item.id ? "#fff" : "#f59e0b"} letterSpacing="-0.5">56</text>
+                          <line x1="15" y1="4" x2="5" y2="16" stroke={activeTool === item.id ? "rgba(255,255,255,0.7)" : "#f59e0b"} strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
                       : <span className="material-icons nav-icon">{item.icon}</span>
                     }
                     <span style={{ flex: 1 }}>{item.label}</span>
@@ -323,7 +330,7 @@ export default function App() {
           </aside>
           <main className="main-content">
             {activeTool === "picks"    && <TodaysPicks mode={mode} isPremium={isPremium} onUpgrade={handleUpgrade} />}
-            {activeTool === "57killer" && <FiftySevenKiller mode={mode} isPremium={isPremium} onUpgrade={handleUpgrade} />}
+            {activeTool === "57killer" && <FiftySixKiller mode={mode} isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "research" && <ResearchHub isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "pitchers" && <PitcherIntel isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "abs"      && <ABSTracker />}
