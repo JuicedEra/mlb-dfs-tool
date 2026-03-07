@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchGames, fetchRoster, searchPlayers, headshot, fetchGameLog, fetchSeasonStats, computeSplit, computeActiveStreak } from "../../utils/mlbApi";
 import { dbLoadPicks, dbSavePick, dbUpdatePickResult, dbDeletePick, getEquippedEmoji } from "../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
+import PlayerPanel from "../shared/PlayerPanel";
 
 const STORAGE_KEY  = "diamondiq_picks_v1";
 const MAX_PICKS_PER_DAY = 2;
@@ -196,6 +197,7 @@ export default function PickTracker() {
   const [resolveMsg, setResolveMsg]     = useState(null);
   const [selectedPick, setSelectedPick] = useState(null);
   const [playerStats, setPlayerStats]   = useState(null);
+  const [panelPick, setPanelPick]       = useState(null); // full PlayerPanel
   const [sharePickId, setSharePickId]   = useState(null);
 
   const today = new Date().toLocaleDateString("en-CA");
@@ -603,8 +605,44 @@ export default function PickTracker() {
                 <div style={{textAlign:"center",padding:20,color:"var(--text-muted)"}}><div className="spinner" style={{margin:"0 auto 8px"}}/>Loading stats...</div>
               )}
             </div>
+            {/* Full Player Card CTA */}
+            {selectedPick.playerId && (
+              <div style={{padding:"0 16px 16px"}}>
+                <button
+                  onClick={() => {
+                    setPanelPick({
+                      batter: { id: selectedPick.playerId, name: selectedPick.playerName, batSide: "?" },
+                      pitcher: null,
+                      game: { gamePk: selectedPick.gamePk ?? null, venue: "" },
+                      scoreData: null,
+                    });
+                    setSelectedPick(null);
+                    setPlayerStats(null);
+                  }}
+                  style={{
+                    width:"100%", display:"flex", alignItems:"center", justifyContent:"center",
+                    gap:6, padding:"9px 0", borderRadius:8, cursor:"pointer", fontWeight:700,
+                    fontSize:12, border:"1px solid var(--border)",
+                    background:"var(--surface)", color:"var(--text-secondary)",
+                  }}
+                >
+                  <span className="material-icons" style={{fontSize:15}}>person</span>
+                  Full Player Card
+                </button>
+              </div>
+            )}
           </div>
         </div>
+      )}
+
+      {/* Full PlayerPanel */}
+      {panelPick && (
+        <PlayerPanel
+          pick={panelPick}
+          onClose={() => setPanelPick(null)}
+          showBvP={false}
+          liveStats={null}
+        />
       )}
 
       {showAdd&&<AddPickModal prefill={prefill} today={today} todayCount={todayPickCount} maxPicks={MAX_PICKS_PER_DAY} onAdd={addPick} onClose={()=>{setShowAdd(false);setPrefill({});}}/>}
