@@ -57,6 +57,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, msg: "" });
   const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [expandedRow, setExpandedRow] = useState(null); // batter.id of inline-expanded row
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("desc");
   const [filterTier, setFilterTier] = useState("all");
@@ -759,10 +760,45 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                     const color = scoreColor(score);
                     const lockCount = 5;
                     const isLocked = !isPremium && i < lockCount;
+                    const isExpanded = expandedRow === p.batter.id;
+                    const bd = p.scoreData.breakdown;
+
+                    // Inline stat cells for the expanded accordion row
+                    const statCells = [
+                      // Recent form
+                      { label: "L3 AVG",    tip: "Batting average over last 3 games",                                          val: p.l3?.avg  || "—",   color: avgColor(p.l3?.avg) },
+                      { label: "L7 AVG",    tip: "Batting average over last 7 games — highest weight in Hit Score",            val: p.l7?.avg  || "—",   color: avgColor(p.l7?.avg) },
+                      { label: "L14 AVG",   tip: "Batting average over last 14 games",                                         val: p.l14?.avg || "—",   color: avgColor(p.l14?.avg) },
+                      { label: "L30 AVG",   tip: "Batting average over last 30 games — season trend baseline",                 val: p.l30?.avg || "—",   color: avgColor(p.l30?.avg) },
+                      { label: "STREAK",    tip: "Consecutive games with at least 1 hit — 5+ triggers streak bonus",           val: p.streak > 0 ? `${p.streak}G 🔥` : "—" },
+                      { label: "SEASON AVG",tip: "Full season batting average",                                                 val: p.seasonStat?.avg || "—", color: avgColor(p.seasonStat?.avg) },
+                      // Matchup
+                      { label: "PLATOON",   tip: `Career AVG vs ${p.pitcher?.hand || "?"}HP — today's pitcher handedness`,    val: p.platoonStat?.avg || "—", color: avgColor(p.platoonStat?.avg) },
+                      { label: "BvP AVG",   tip: `Career batting average vs ${p.pitcher?.name || "today's pitcher"} specifically`, val: p.bvpStat?.avg || "—", color: avgColor(p.bvpStat?.avg) },
+                      { label: "BvP AB",    tip: "Career at-bats vs today's pitcher (5+ = reliable sample)",                  val: p.bvpStat?.atBats ?? "—" },
+                      // Environment
+                      { label: "PARK",      tip: "Park factor — 100 neutral, 110+ hitter-friendly, <90 pitcher-friendly",      val: p.pf,  raw: true },
+                      { label: "HOME/AWAY", tip: "Whether this batter is at home (gets 5pt lineup bonus in IQ scorer)",        val: p.game?.venue === p.battingTeam?.homeVenue ? "Home" : "Away" },
+                      { label: "D/N AVG",   tip: `Batting average in ${p.game?.isNight ? "night" : "day"} games this season`,  val: (p.game?.isNight ? p.dayNightStat?.["Night"]?.avg : p.dayNightStat?.["Day"]?.avg) || "—" },
+                      // Statcast
+                      { label: "xBA",       tip: "Expected batting avg from Statcast (exit velo + launch angle)",              val: p.statcast?.est_ba ? `.${Math.round(parseFloat(p.statcast.est_ba)*1000)}` : "—", pro: true },
+                      { label: "BARREL %",  tip: "% of batted balls at optimal exit velo (98+mph) and launch angle (26-30°)", val: p.scoreData.statcast?.barrelPct != null ? `${p.scoreData.statcast.barrelPct.toFixed(1)}%` : "—", pro: true },
+                      { label: "HARD HIT%", tip: "% of batted balls hit 95+ mph — measures consistent hard contact",          val: p.scoreData.statcast?.hardHitPct != null ? `${p.scoreData.statcast.hardHitPct.toFixed(0)}%` : "—", pro: true },
+                      // Score breakdown
+                      { label: "CONTACT",   tip: `Contact & opportunity sub-score (K%, BABIP, lineup, PA probability) — max 38pts`, val: bd ? `${bd.contact}/38` : "—", raw: true },
+                      { label: "FORM",      tip: `Recent form sub-score (L3/L7/L14/L30 avg, streak, GwH rate) — max 27pts`,    val: bd ? `${bd.form}/27` : "—", raw: true },
+                      { label: "MATCHUP",   tip: `Matchup quality sub-score (platoon, BvP, pitcher stats, rest) — max 24pts`,  val: bd ? `${bd.matchup}/24` : "—", raw: true },
+                    ];
+
                     return (
-                      <tr key={`${p.batter.id}-${p.pitcher.id}`}
-                        onClick={() => isLocked ? (onUpgrade && onUpgrade()) : setSelectedPlayer(p)}
-                        style={isLocked ? { filter: "blur(6px)", pointerEvents: "auto", cursor: "pointer", userSelect: "none", position: "relative" } : undefined}>
+                      <>
+                    <tr key={`${p.batter.id}-${p.pitcher.id}`}
+                      onClick={() => isLocked ? (onUpgrade && onUpgrade()) : setExpandedRow(isExpanded ? null : p.batter.id)}
+                      style={{
+                        ...(isLocked ? { filter: "blur(6px)", pointerEvents: "auto", cursor: "pointer", userSelect: "none" } : undefined),
+                        background: isExpanded ? "var(--surface-2)" : undefined,
+                        cursor: isLocked ? "pointer" : "pointer",
+                      }}>
                         <td style={{ color: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }}>{i+1}</td>
                         {/* Photo + flame */}
                         <td style={{ padding: "6px 8px" }}>
@@ -823,7 +859,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                         <td>
                           <WeatherCell weather={p.game.weather} venue={p.game.venue} />
                         </td>
-                        <td title={p.scoreData.breakdown ? `Contact: ${p.scoreData.breakdown.contact}/35 · Form: ${p.scoreData.breakdown.form}/25 · Matchup: ${p.scoreData.breakdown.matchup}/25 · Statcast: ${p.scoreData.breakdown.statcast}/10 · Env: ${p.scoreData.breakdown.env}/5` : ""}>
+                        <td title={bd ? `Contact: ${bd.contact}/38 · Form: ${bd.form}/27 · Matchup: ${bd.matchup}/24 · Statcast: ${bd.statcast}/9 · Env: ${bd.env}/4` : ""}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                             <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color, lineHeight: 1 }}>{score}</div>
                             <div style={{ display:"flex", gap:4, alignItems:"center" }}>
@@ -912,6 +948,96 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                           </button>
                         </td>
                       </tr>
+
+                      {/* ── Inline expanded stats row ── */}
+                      {isExpanded && !isLocked && (
+                        <tr key={`${p.batter.id}-expand`} style={{ background: "var(--surface-2)" }}>
+                          <td colSpan={99} style={{ padding: "0 0 2px 0", borderBottom: "2px solid var(--navy-light)" }}>
+                            <div style={{ padding: "14px 20px 16px", borderTop: "1px solid var(--border)" }}>
+
+                              {/* Stat grid */}
+                              <div style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+                                gap: "8px 14px",
+                                marginBottom: 14,
+                              }}>
+                                {statCells.map(({ label, tip, val, color: cellColor, raw, pro }) => (
+                                  <div
+                                    key={label}
+                                    title={tip}
+                                    data-tooltip={tip}
+                                    style={{ cursor: "help" }}
+                                  >
+                                    <div style={{
+                                      fontSize: 9, fontWeight: 700, letterSpacing: "0.07em",
+                                      textTransform: "uppercase",
+                                      color: "var(--text-muted)", marginBottom: 3,
+                                      display: "flex", alignItems: "center", gap: 4,
+                                    }}>
+                                      {label}
+                                      {pro && !isPremium && <span style={{ fontSize: 8, background: "var(--yellow)", color: "#0A2342", borderRadius: 2, padding: "0px 3px", fontWeight: 800 }}>PRO</span>}
+                                    </div>
+                                    <div style={{
+                                      fontFamily: raw ? "var(--font-mono)" : "var(--font-body)",
+                                      fontSize: 14, fontWeight: 700,
+                                      color: pro && !isPremium ? "transparent"
+                                        : cellColor === "hot"  ? "var(--data-green)"
+                                        : cellColor === "warm" ? "var(--data-yellow)"
+                                        : cellColor === "cold" ? "var(--data-red)"
+                                        : "var(--text-primary)",
+                                      filter: pro && !isPremium ? "blur(4px)" : "none",
+                                      userSelect: pro && !isPremium ? "none" : "auto",
+                                    }}>
+                                      {val}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Factor pills row */}
+                              {p.scoreData.factors.length > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
+                                  {p.scoreData.factors.map((f, fi) => (
+                                    <span key={fi} className={`factor-pill fp-${f.type}`} title={f.label}>
+                                      <span className="material-icons">{f.icon}</span>
+                                      {f.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Actions */}
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setExpandedRow(null); setSelectedPlayer(p); }}
+                                  className="btn btn-sm"
+                                  style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 5 }}
+                                >
+                                  <span className="material-icons" style={{ fontSize: 13 }}>open_in_full</span>
+                                  Full Deep Dive
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setQuickTrack({ pick: p }); }}
+                                  className="btn btn-sm"
+                                  style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 5, background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent)" }}
+                                >
+                                  <span className="material-icons" style={{ fontSize: 13 }}>add_circle</span>
+                                  Track Pick
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setExpandedRow(null); }}
+                                  style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}
+                                >
+                                  <span className="material-icons" style={{ fontSize: 13 }}>expand_less</span>
+                                  Collapse
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </>
                     );
                   })}
                 </tbody>
