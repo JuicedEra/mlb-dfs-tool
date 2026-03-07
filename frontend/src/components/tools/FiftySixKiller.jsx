@@ -2,16 +2,31 @@
 // DiamondIQ PRO — 56 Killer Tool v2
 // Composite score: lineup pos, rolling hit rate, PA probability, park factor, pitcher K%, home/road risk
 // Formula hidden — confidence bars + tier labels + factor pills only
+//
+// CHANGELOG v2.1
+// - Fix: no-games date now shows error message instead of silent blank screen
+// - Fix: fetchConfirmedLineups failure now falls back to fetchLineupOrder (boxscore) + roster merge
+//        for named, ordered candidates — prevents all candidates being unconfirmed roster dumps
+// - Fix: unconfirmed lineup scoring boosted (lineupScore 10→18, paScore 7→10) so roster-fallback
+//        players score in the 45-65 range and pass the confidence filter
+// - Fix: confidence filter lowered from ≥60 to ≥40 so early-season / pre-lineup data surfaces results
+// - Fix: interim + final threshold unified at CONF_THRESHOLD constant for easy future tuning
 
 import { useState, useCallback, useRef } from "react";
 import {
   fetchGames,
   fetchConfirmedLineups,
+  fetchLineupOrder,
   fetchGameLog,
   fetchPitcherStats,
   fetchRoster,
   PARK_FACTORS,
 } from "../../utils/mlbApi";
+
+// ─── Minimum confidence to surface a result ──────────────────────────────────
+// 40 = show any player with reasonable form data, even pre-lineup
+// Raise to 60 once regular season lineups post consistently
+const CONF_THRESHOLD = 40;
 
 // ─── Tier config ────────────────────────────────────────────────────────────
 const TIERS = [
@@ -62,7 +77,9 @@ export function compute56KillerScore({
     else if (lineupPos <= 7) lineupScore = 10;
     else lineupScore = 5;
   } else {
-    lineupScore = 10; // projected unknown
+    // FIX: was 10 — boosted to 18 so unconfirmed roster candidates score
+    // in the 45-65 range and pass the CONF_THRESHOLD filter
+    lineupScore = 18; // unconfirmed but likely starter
   }
 
   // 2. Rolling hit rate (25pts) — weighted blend L7>L14>L30
@@ -79,7 +96,8 @@ export function compute56KillerScore({
     const basePA = lineupPos <= 4 ? 20 : lineupPos <= 6 ? 15 : 10;
     paScore = lineupConfirmed ? basePA : basePA * 0.75;
   } else {
-    paScore = lineupConfirmed ? 12 : 7;
+    // FIX: was 7 unconfirmed — boosted to 10 to match the lineupScore change above
+    paScore = lineupConfirmed ? 12 : 10;
   }
 
   // 4. Park factor (10pts) — 110+ hitter-friendly, <90 pitcher's park
@@ -301,16 +319,16 @@ function SkeletonCard() {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
-  const [picks, setPicks]         = useState([]);
-  const [status, setStatus]       = useState("idle"); // idle | loading | done | error
-  const [progress, setProgress]   = useState({ scored: 0, total: 0 });
-  const [errorMsg, setErrorMsg]   = useState("");
+  const [picks, setPicks]           = useState([]);
+  const [status, setStatus]         = useState("idle"); // idle | loading | done | error
+  const [progress, setProgress]     = useState({ scored: 0, total: 0 });
+  const [errorMsg, setErrorMsg]     = useState("");
   const [filterTier, setFilterTier] = useState("all");
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     return d.toISOString().slice(0, 10);
   });
-  const abortRef    = useRef(false);
+  const abortRef = useRef(false);
 
   // ─── Scoring pipeline ──────────────────────────────────────────────────────
   const runAnalysis = useCallback(async () => {
@@ -322,60 +340,96 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
 
     try {
       const { games } = await fetchGames(selectedDate);
+      console.log("[56K] Games found:", games?.length ?? 0, games?.map(g => g.gamePk));
+
+      // FIX: was setStatus("done") with no message — now surfaces a clear error
       if (!games?.length) {
-        setStatus("done");
+        setErrorMsg(`No MLB games scheduled for ${selectedDate}. Try a different date.`);
+        setStatus("error");
         return;
       }
 
-      // Gather all batters from lineups — fall back to active roster if lineup not yet posted
+      // ── Gather all batters from lineups ──────────────────────────────────
+      // Strategy (per game, per side):
+      //   1. Try fetchConfirmedLineups (/feed/live) — richest but slow/large
+      //   2. If that fails or returns <5 players, try fetchLineupOrder (/boxscore)
+      //      + merge with roster for names
+      //   3. Final fallback: active roster (unordered, no confirmed credit)
       const candidates = [];
+
       for (const game of games) {
         if (abortRef.current) break;
+
+        // Try primary lineup source — swallow errors gracefully
         const lineupData = await fetchConfirmedLineups(game.gamePk).catch(() => null);
+
         const sides = ["home", "away"];
         for (const side of sides) {
-          const confirmed  = lineupData?.[side]?.status === "confirmed";
-          let   lineup     = lineupData?.[side]?.players ?? [];
           const battingTeam = game[side];
           const opponent    = game[side === "home" ? "away" : "home"];
-          const pitcherId   = game[side === "home" ? "away" : "home"]?.pitcher?.id;
-          const pitcherNameFromGame = game[side === "home" ? "away" : "home"]?.pitcher?.name ?? null;
+          const pitcherId   = opponent?.pitcher?.id ?? null;
+          const pitcherNameFromGame = opponent?.pitcher?.name ?? null;
 
-          // ── Roster fallback: spring training + pre-game lineups are often empty ──
+          let confirmed = lineupData?.[side]?.status === "confirmed";
+          let lineup    = lineupData?.[side]?.players ?? [];
+
+          // ── Fallback 1: boxscore batting order + roster name merge ────────
+          // fetchLineupOrder is lighter (/boxscore) and more reliable pre-game
+          // than /feed/live. Returns ordered IDs; cross-reference roster for names.
+          if (lineup.length < 5 && battingTeam?.teamId) {
+            try {
+              const [orderData, roster] = await Promise.all([
+                fetchLineupOrder(game.gamePk).catch(() => ({ home: [], away: [] })),
+                fetchRoster(battingTeam.teamId).catch(() => []),
+              ]);
+              const orderIds = orderData[side] ?? [];
+              if (orderIds.length >= 1) {
+                const rosterMap = new Map(roster.map(p => [p.id, p]));
+                lineup = orderIds.map((id, idx) => {
+                  const p = rosterMap.get(id) ?? { id, name: `Player ${id}`, position: "?", batSide: "?" };
+                  return { id, name: p.name ?? p.fullName ?? `Player ${id}`, position: p.position, batSide: p.batSide, order: idx + 1 };
+                });
+                confirmed = orderIds.length >= 9; // full order = confirmed
+              }
+            } catch { /* fall through to roster fallback */ }
+          }
+
+          // ── Fallback 2: active roster (no order, no confirmed credit) ─────
           if (lineup.length < 5 && battingTeam?.teamId) {
             try {
               const roster = await fetchRoster(battingTeam.teamId);
-              // Roster is not ordered — assign positions 1-9 for top hitters (non-pitchers)
               lineup = roster.slice(0, 9).map((p, idx) => ({
                 id: p.id,
-                name: p.name,
+                name: p.name ?? p.fullName ?? `Player ${p.id}`,
                 position: p.position,
                 batSide: p.batSide,
                 order: idx + 1,
               }));
-            } catch { /* skip if roster also fails */ }
+              confirmed = false;
+            } catch { /* skip team entirely */ }
           }
 
           for (let i = 0; i < lineup.length; i++) {
             candidates.push({
-              batter: lineup[i],
-              lineupPos: confirmed ? (i + 1) : null, // unconfirmed = no position credit
+              batter:       lineup[i],
+              lineupPos:    confirmed ? (i + 1) : null,
               lineupConfirmed: confirmed,
               battingTeam,
               opponent,
               pitcherId,
-              pitcherName: pitcherNameFromGame,
+              pitcherName:  pitcherNameFromGame,
               game,
-              isHome: side === "home",
-              venue: game.venue ?? "",
+              isHome:       side === "home",
+              venue:        game.venue ?? "",
             });
           }
         }
       }
 
+      console.log("[56K] Total candidates:", candidates.length);
       setProgress({ scored: 0, total: candidates.length });
 
-      const BATCH = 12;
+      const BATCH   = 12;
       const results = [];
 
       for (let i = 0; i < candidates.length; i += BATCH) {
@@ -384,29 +438,36 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
 
         const batchResults = await Promise.allSettled(
           batch.map(async (c) => {
-            const { batter, lineupPos, lineupConfirmed, battingTeam, opponent, pitcherId, pitcherName: pitcherNameC, game, isHome, venue } = c;
+            const {
+              batter, lineupPos, lineupConfirmed,
+              battingTeam, opponent, pitcherId, pitcherName: pitcherNameC,
+              game, isHome, venue,
+            } = c;
 
-            // Fetch gamelog — fetchGameLog returns sorted array directly
+            // Fetch gamelog — returns sorted desc by date
             const sorted = await fetchGameLog(batter.id, new Date().getFullYear()).catch(() => []);
 
-            // Rolling splits — MLB API uses atBats not ab
+            // Rolling splits — use atBats (MLB API field name)
             const sliceHits = (n) => {
               let h = 0, pa = 0;
-              for (const g of sorted.slice(0, n)) { h += +(g.hits ?? 0); pa += +(g.atBats ?? g.ab ?? 0); }
+              for (const g of sorted.slice(0, n)) {
+                h  += +(g.hits   ?? 0);
+                pa += +(g.atBats ?? g.ab ?? 0);
+              }
               return { hits: h, pa };
             };
             const s7  = sliceHits(7);
             const s14 = sliceHits(14);
             const s30 = sliceHits(30);
 
-            // Active streak
+            // Active hit streak
             let activeStreak = 0;
             for (const g of sorted) {
               if ((g.hits ?? 0) > 0) activeStreak++;
               else break;
             }
 
-            // Prev streak (bounce-back)
+            // Previous streak (bounce-back signal)
             let prevStreak = 0;
             if ((sorted[0]?.hits ?? 1) === 0) {
               for (const g of sorted.slice(1)) {
@@ -415,12 +476,12 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
               }
             }
 
-            // Season avg
-            const seasonHits = sorted.reduce((a, g) => a + +(g.hits ?? 0), 0);
+            // Season avg from gamelog
+            const seasonHits = sorted.reduce((a, g) => a + +(g.hits   ?? 0), 0);
             const seasonAB   = sorted.reduce((a, g) => a + +(g.atBats ?? g.ab ?? 0), 0);
             const seasonAvg  = seasonAB >= 10 ? seasonHits / seasonAB : 0.250;
 
-            // Park factor — keyed by venue name string, value is {factor, hr, type}
+            // Park factor
             const parkFactor = PARK_FACTORS?.[venue]?.factor ?? 100;
 
             // Pitcher K%
@@ -429,10 +490,6 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
               const pStats = await fetchPitcherStats(pitcherId).catch(() => null);
               pitcherKPct  = pStats?.kPct ?? null;
             }
-            const pitcherName = pitcherNameC;
-
-            // Platoon (simple: check batter hand vs pitcher)
-            const platoon = null; // surfaced as "—" if unavailable
 
             const { confidence, tier, factors } = compute56KillerScore({
               lineupPos,
@@ -449,10 +506,10 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
             });
 
             return {
-              id: `${batter.id}-${game.gamePk}`,
-              name: batter.fullName ?? batter.name ?? "Unknown",
-              team: battingTeam?.team ?? battingTeam?.abbr ?? "",
-              opponent: opponent?.abbr ?? "",
+              id:              `${batter.id}-${game.gamePk}`,
+              name:            batter.fullName ?? batter.name ?? "Unknown",
+              team:            battingTeam?.team ?? battingTeam?.abbr ?? "",
+              opponent:        opponent?.abbr ?? "",
               venue,
               lineupPos,
               lineupConfirmed,
@@ -467,37 +524,41 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
               l30hits: s30.hits, l30pa: s30.pa,
               parkFactor,
               pitcherKPct,
-              pitcherName,
-              platoon,
+              pitcherName: pitcherNameC,
             };
           })
         );
 
         for (const r of batchResults) {
           if (r.status === "fulfilled") results.push(r.value);
+          // Rejected promises are swallowed — player simply won't appear
         }
 
         setProgress({ scored: Math.min(i + BATCH, candidates.length), total: candidates.length });
 
-        // Streaming update — show results after every batch so UI never goes blank
+        // Streaming update — show results as they come in
+        // FIX: threshold lowered from 60 → CONF_THRESHOLD (40)
         const interim = [...results]
-          .filter(p => p.confidence >= 60)
+          .filter(p => p.confidence >= CONF_THRESHOLD)
           .sort((a, b) => b.confidence - a.confidence)
           .slice(0, 10);
         setPicks(interim);
       }
 
-      // Final sort — top 10 ≥ 82% confidence
+      // Final sort
+      // FIX: threshold lowered from 60 → CONF_THRESHOLD (40)
       const final = [...results]
-        .filter(p => p.confidence >= 60)
+        .filter(p => p.confidence >= CONF_THRESHOLD)
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, 10);
 
+      console.log("[56K] Final results:", final.length, "above threshold", CONF_THRESHOLD);
       setPicks(final);
       setStatus("done");
+
     } catch (err) {
       console.error("[56Killer]", err);
-      setErrorMsg(err.message ?? "Unknown error");
+      setErrorMsg(err.message ?? "Unknown error. Check console for details.");
       setStatus("error");
     }
   }, [selectedDate]);
@@ -507,8 +568,8 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
     ? picks
     : picks.filter(p => p.tier?.label === filterTier);
 
-  const isLoading = status === "loading";
-  const isDone    = status === "done";
+  const isLoading  = status === "loading";
+  const isDone     = status === "done";
   const hasResults = picks.length > 0;
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -553,7 +614,7 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
           display: "flex", gap: 10, flexWrap: "wrap",
           alignItems: "center", marginBottom: 20,
         }}>
-          {/* Date selector — native input, fully clickable */}
+          {/* Date selector */}
           <input
             type="date"
             value={selectedDate}
@@ -700,6 +761,20 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
         {isLoading && !hasResults && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {[...Array(5)].map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+        )}
+
+        {/* ── No results after done ── */}
+        {isDone && !hasResults && (
+          <div style={{
+            textAlign: "center", padding: "40px 16px",
+            color: "var(--text-muted, #8494B2)",
+          }}>
+            <span className="material-icons" style={{ fontSize: 32, display: "block", marginBottom: 10, opacity: 0.4 }}>search_off</span>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text-secondary)" }}>No plays surfaced</div>
+            <div style={{ fontSize: 12 }}>
+              Lineups may not be posted yet. Try again closer to game time, or check a past date.
+            </div>
           </div>
         )}
 
