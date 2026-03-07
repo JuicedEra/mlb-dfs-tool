@@ -171,17 +171,18 @@ function PlayerCard({ pick, rank }) {
     <div
       onClick={() => setExpanded(e => !e)}
       style={{
-        background: "rgba(255,255,255,0.035)",
-        border: `1px solid ${expanded ? tier.border : "rgba(255,255,255,0.07)"}`,
+        background: "var(--surface, #fff)",
+        border: `1px solid ${expanded ? tier.border : "var(--border, #D8DEED)"}`,
         borderLeft: `3px solid ${tier.color}`,
         borderRadius: 10,
         padding: "14px 16px",
         cursor: "pointer",
-        transition: "border-color 0.2s, background 0.2s",
+        transition: "border-color 0.2s, background 0.2s, box-shadow 0.2s",
         userSelect: "none",
+        boxShadow: "var(--shadow-xs)",
       }}
-      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.055)"}
-      onMouseLeave={e => e.currentTarget.style.background = expanded ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.035)"}
+      onMouseEnter={e => { e.currentTarget.style.background = "var(--surface-2, #F5F7FB)"; e.currentTarget.style.boxShadow = "var(--shadow-sm)"; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "var(--surface, #fff)"; e.currentTarget.style.boxShadow = "var(--shadow-xs)"; }}
     >
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
@@ -200,7 +201,7 @@ function PlayerCard({ pick, rank }) {
         {/* Player info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.01em" }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary, #0C1A35)", letterSpacing: "-0.01em" }}>
               {pick.name}
             </span>
             <TierBadge tier={tier} />
@@ -208,7 +209,7 @@ function PlayerCard({ pick, rank }) {
               <span style={{ fontSize: 11, color: "#64748b" }}>#{pick.lineupPos}</span>
             )}
           </div>
-          <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted, #8494B2)", marginTop: 2 }}>
             {pick.team} · {pick.opponent} · {pick.venue}
           </div>
         </div>
@@ -218,7 +219,7 @@ function PlayerCard({ pick, rank }) {
           <div style={{ fontSize: 22, fontWeight: 800, color: tier.color, lineHeight: 1 }}>
             {pick.confidence}
           </div>
-          <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.05em" }}>CONF</div>
+          <div style={{ fontSize: 10, color: "var(--text-muted, #8494B2)", letterSpacing: "0.05em" }}>CONF</div>
         </div>
       </div>
 
@@ -237,9 +238,9 @@ function PlayerCard({ pick, rank }) {
         <div style={{
           marginTop: 14,
           paddingTop: 12,
-          borderTop: "1px solid rgba(255,255,255,0.07)",
+          borderTop: "1px solid var(--border, #D8DEED)",
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
           gap: 8,
         }}>
           {[
@@ -253,8 +254,8 @@ function PlayerCard({ pick, rank }) {
             { label: "PITCHER", value: pick.pitcherName ?? "—", wide: true },
           ].map(s => (
             <div key={s.label} style={{ gridColumn: s.wide ? "span 2" : "span 1" }}>
-              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.07em", marginBottom: 2 }}>{s.label}</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#cbd5e1" }}>{s.value}</div>
+              <div style={{ fontSize: 10, color: "var(--text-muted, #8494B2)", letterSpacing: "0.07em", marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary, #445068)" }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -262,7 +263,7 @@ function PlayerCard({ pick, rank }) {
 
       {/* Expand chevron */}
       <div style={{ textAlign: "center", marginTop: 8 }}>
-        <span style={{ fontSize: 11, color: "#334155", userSelect: "none" }}>
+        <span style={{ fontSize: 11, color: "var(--text-muted, #8494B2)", userSelect: "none" }}>
           {expanded ? "▲" : "▼"}
         </span>
       </div>
@@ -506,14 +507,14 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
 
       {/* ── Header ── */}
       <div style={{
-        background: "rgba(255,255,255,0.03)",
-        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        background: "var(--surface-2, #F5F7FB)",
+        borderBottom: "1px solid var(--border, #D8DEED)",
         padding: "20px 24px 16px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
           <span style={{
             fontSize: 22, fontWeight: 900, letterSpacing: "-0.03em",
-            background: "linear-gradient(135deg, #f59e0b, #fbbf24)",
+            background: "linear-gradient(135deg, #f59e0b, #d97706)",
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
           }}>
             57 Killer
@@ -538,7 +539,7 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
           display: "flex", gap: 10, flexWrap: "wrap",
           alignItems: "center", marginBottom: 20,
         }}>
-          {/* Date selector — styled wrapper so dark theme renders correctly */}
+          {/* Date selector — colorScheme:dark forces the browser calendar to dark mode */}
           <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
             <span className="material-icons" style={{
               position: "absolute", left: 10, fontSize: 16,
@@ -550,11 +551,11 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
               onChange={e => setSelectedDate(e.target.value)}
               disabled={isLoading}
               style={{
-                background: "rgba(245,158,11,0.08)",
-                border: `1px solid ${selectedDate ? "#f59e0b55" : "rgba(255,255,255,0.1)"}`,
+                background: "var(--surface, #fff)",
+                border: `1px solid ${selectedDate ? "#f59e0b88" : "var(--border, #D8DEED)"}`,
                 borderRadius: 8,
-                color: "#f1f5f9",
-                colorScheme: "dark",
+                color: "var(--text-primary, #0C1A35)",
+                colorScheme: "light",
                 padding: "8px 12px 8px 34px",
                 fontSize: 13,
                 fontWeight: 600,
@@ -568,9 +569,11 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
           {/* Selected date readable label */}
           {selectedDate && (
             <span style={{
-              fontSize: 12, color: "#94a3b8", fontWeight: 500,
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.07)",
+              fontSize: 12,
+              color: "var(--text-secondary, #445068)",
+              fontWeight: 600,
+              background: "var(--surface-2, #F5F7FB)",
+              border: "1px solid var(--border, #D8DEED)",
               borderRadius: 6, padding: "5px 10px",
               whiteSpace: "nowrap",
             }}>
@@ -642,7 +645,7 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
             </div>
             <div style={{
               height: 3, borderRadius: 2,
-              background: "rgba(255,255,255,0.07)", overflow: "hidden",
+              background: "var(--border, #D8DEED)", overflow: "hidden",
             }}>
               <div style={{
                 height: "100%",
@@ -658,10 +661,10 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
         {/* ── Error ── */}
         {status === "error" && (
           <div style={{
-            background: "rgba(239,68,68,0.1)",
-            border: "1px solid rgba(239,68,68,0.3)",
+            background: "var(--data-red-bg, rgba(220,38,38,0.09))",
+            border: "1px solid var(--data-red-border, rgba(220,38,38,0.22))",
             borderRadius: 8, padding: "12px 16px",
-            color: "#fca5a5", fontSize: 13, marginBottom: 16,
+            color: "var(--data-red, #DC2626)", fontSize: 13, marginBottom: 16,
           }}>
             <span className="material-icons" style={{ fontSize: 16, verticalAlign: "middle", marginRight: 6 }}>error_outline</span>
             {errorMsg || "Failed to load data. Check your connection and try again."}
@@ -672,16 +675,16 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
         {status === "idle" && (
           <div style={{
             textAlign: "center", padding: "48px 16px",
-            color: "#334155",
+            color: "var(--text-muted, #8494B2)",
           }}>
-            <span className="material-icons" style={{ fontSize: 48, display: "block", marginBottom: 12, color: "#1e3050" }}>
+            <span className="material-icons" style={{ fontSize: 48, display: "block", marginBottom: 12, color: "var(--border-dark, #B8C2D8)" }}>
               bolt
             </span>
-            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: "#475569" }}>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: "var(--text-secondary, #445068)" }}>
               Ready to run
             </div>
-            <div style={{ fontSize: 13 }}>
-              Select a date and tap <strong style={{ color: "#f59e0b" }}>Run Analysis</strong> to surface today's top plays.
+            <div style={{ fontSize: 13, color: "var(--text-muted, #8494B2)" }}>
+              Select a date and tap <strong style={{ color: "#d97706" }}>Run Analysis</strong> to surface today's top plays.
             </div>
           </div>
         )}
@@ -700,9 +703,9 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
             <div style={{
               display: "flex", gap: 16, flexWrap: "wrap",
               marginBottom: 14, padding: "10px 14px",
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.06)",
-              borderRadius: 8, fontSize: 12, color: "#64748b",
+              background: "var(--surface-2, #F5F7FB)",
+              border: "1px solid var(--border, #D8DEED)",
+              borderRadius: 8, fontSize: 12, color: "var(--text-muted, #8494B2)",
             }}>
               {TIERS.map(t => {
                 const n = picks.filter(p => p.tier?.label === t.label).length;
@@ -721,7 +724,7 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
             {/* Cards */}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {visiblePicks.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "32px 0", color: "#475569", fontSize: 14 }}>
+                <div style={{ textAlign: "center", padding: "32px 0", color: "var(--text-muted)", fontSize: 14 }}>
                   No plays match the selected tier filter.
                 </div>
               ) : (
@@ -735,9 +738,9 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
             {isDone && (
               <div style={{
                 marginTop: 20, padding: "10px 14px",
-                background: "rgba(245,158,11,0.06)",
-                border: "1px solid rgba(245,158,11,0.15)",
-                borderRadius: 8, fontSize: 11, color: "#78716c", lineHeight: 1.6,
+                background: "var(--data-yellow-bg, rgba(180,83,9,0.06))",
+                border: "1px solid var(--data-yellow-border, rgba(180,83,9,0.18))",
+                borderRadius: 8, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6,
               }}>
                 <span className="material-icons" style={{ fontSize: 13, verticalAlign: "middle", marginRight: 4, color: "#d97706" }}>info</span>
                 Confidence scores reflect a proprietary composite model. They do not guarantee results.
