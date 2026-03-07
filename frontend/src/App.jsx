@@ -23,7 +23,7 @@ const CONTACT_EMAIL = "diamondiqinfo@gmail.com";
 
 const NAV = [
   { section: "Today", items: [
-    { id: "picks",    label: "Today's Picks",   icon: "auto_awesome",       badge: "LIVE" },
+    { id: "picks",    label: "Today's Picks",   icon: "IQ",  iconType: "text",    badge: "LIVE" },
     { id: "57killer", label: "57 Killer",        icon: "bolt",               badge: "NEW"  },
     { id: "research", label: "Player Research",  icon: "manage_search" },
     { id: "pitchers", label: "Pitcher Intel",    icon: "sports_baseball",    pro: true },
@@ -270,7 +270,10 @@ export default function App() {
                 {section.items.map(item => (
                   <div key={item.id} className={`nav-item ${activeTool === item.id ? "active" : ""} ${item.pro && !isPremium ? "nav-locked" : ""}`}
                     onClick={() => handleNavClick(item.id)}>
-                    <span className="material-icons nav-icon">{item.icon}</span>
+                    {item.iconType === "text"
+                      ? <span className="nav-icon" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, fontSize: 10, fontWeight: 900, letterSpacing: "-0.5px", fontFamily: "var(--font-display)", borderRadius: 4, background: activeTool === item.id ? "var(--accent)" : "rgba(10,110,75,0.18)", color: activeTool === item.id ? "#fff" : "var(--accent-light)", flexShrink: 0 }}>{item.icon}</span>
+                      : <span className="material-icons nav-icon">{item.icon}</span>
+                    }
                     <span style={{ flex: 1 }}>{item.label}</span>
                     {item.pro && !isPremium && <span className="material-icons" style={{ fontSize: 13, color: "var(--yellow)", opacity: 0.7 }}>lock</span>}
                     {item.badge && <span className="nav-badge">{item.badge}</span>}
