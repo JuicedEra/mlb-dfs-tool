@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  fetchGames, fetchRoster, fetchGameLog, computeSplit, computeActiveStreak, computePreviousStreak,
+  fetchGames, fetchRoster, fetchGameLog, computeSplit, computeActiveStreak,
   fetchBvP, fetchPlatoonSplits, fetchDayNightSplits, fetchSeasonStats,
   fetchPitcherStats, fetchPitcherGameLog, fetchAllLineups, fetchPersonInfo,
   fetchStatcastForPlayer, fetchLiveBoxscoreStats,
-  PARK_FACTORS, computeHitScore, avgColor, scoreColor, tierClass, tierBadgeLabel,
+  PARK_FACTORS, computeHitScore, computePreviousStreak,
+  avgColor, scoreColor, tierClass, tierBadgeLabel,
   isPlayerHot, headshot,
 } from "../../utils/mlbApi";
 import { fetchMLBEvents, fetchEventProps, matchEvent, findPlayerLine, fmtOdds, HAS_PROP_LINES } from "../../utils/propLinesApi";
@@ -67,6 +68,9 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
   const [liveStats, setLiveStats] = useState({}); // gamePk → { stats: Map, status }
   const PROP_TYPES = ["1+ Hits (BTS)", "2+ Hits", "1+ Home Runs", "1+ Total Bases", "2+ Total Bases"];
   const [teams, setTeams] = useState([]);
+  // Progressive display — show top 50, user can load more
+  // Full pool is always scored and cached; this only controls what's rendered
+  const [displayLimit, setDisplayLimit] = useState(50);
 
   // Listen for pick-tracked toast
   useEffect(() => {
@@ -114,6 +118,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
   }, [picks]);
 
   useEffect(() => {
+    setDisplayLimit(50); // reset to top 50 whenever date changes
     const cached = _scoreCache[date];
     if (cached) {
       setPicks(cached.picks);
@@ -270,6 +275,14 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
           if (r.status === "fulfilled" && r.value) results.push(r.value);
         }
         setProgress(p => ({ ...p, done: Math.min(i + BATCH, allBatters.length) }));
+
+        // ── Streaming display: show scored players immediately so the table
+        // populates as scoring runs instead of waiting for the full pool ──
+        // Update every 2 batches (24 players) to avoid excessive re-renders
+        if (i > 0 && (i / BATCH) % 2 === 0 && results.length > 0) {
+          const interim = [...results].sort((a, b) => b.scoreData.score - a.scoreData.score);
+          setPicks(interim);
+        }
       }
 
       results.sort((a,b) => b.scoreData.score - a.scoreData.score);
@@ -281,6 +294,30 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
         const key = `${r.batter.id}:${r.game.gamePk}`;
         if (seen.has(key)) return false;
         seen.add(key);
+        return true;
+      });
+
+      // ── CONFIRMED LINEUP FILTER ──────────────────────────────────────────
+      // Once a team's lineup is confirmed, ONLY show confirmed starters.
+      // Players from teams with no confirmed lineup yet stay visible (PROJ badge).
+      // This prevents non-starters appearing in recommendations.
+      const confirmedPlayerIds = new Set();
+      for (const [, data] of lineupMap) {
+        for (const side of ["home", "away"]) {
+          if (data[side]?.status === "confirmed") {
+            for (const player of data[side].players) {
+              confirmedPlayerIds.add(player.id);
+            }
+          }
+        }
+      }
+      const lineupFiltered = deduped.filter(r => {
+        if (r.lineupStatus === "projected") {
+          const lineupData = lineupMap.get(r.game.gamePk);
+          const side = r.battingTeam.teamId === r.game.home?.teamId ? "home" : "away";
+          const teamConfirmed = lineupData?.[side]?.status === "confirmed";
+          if (teamConfirmed && !confirmedPlayerIds.has(r.batter.id)) return false;
+        }
         return true;
       });
 
@@ -296,8 +333,8 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
           .filter(p => p.game.gameDate && new Date(p.game.gameDate) <= now)
           .map(p => p.batter.id)
       );
-      // Also mark any player whose game has started according to current deduped list
-      deduped.forEach(p => {
+      // Also mark any player whose game has started according to current filtered list
+      lineupFiltered.forEach(p => {
         if (p.game.gameDate && new Date(p.game.gameDate) <= now) {
           startedFromData.add(p.batter.id);
         }
@@ -308,17 +345,17 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
       // Save back so next refresh remembers
       if (startedPlayerIds.size > 0) saveStartedIds(date, startedPlayerIds);
 
-      // Use previous rank from cache OR reconstruct from deduped order
-      const rankSource = prevPicks.length > 0 ? prevPicks : deduped;
+      // Use previous rank from cache OR reconstruct from lineupFiltered order
+      const rankSource = prevPicks.length > 0 ? prevPicks : lineupFiltered;
       const prevRankMap = new Map(rankSource.map((p, i) => [p.batter.id, i]));
 
       if (startedPlayerIds.size > 0) {
         // Keep started players at their previous rank, splice in updated unstarted players
         const prevStarted = rankSource.filter(p => startedPlayerIds.has(p.batter.id));
         // Update started players with latest live stats but keep their rank
-        const latestById = new Map(deduped.map(p => [p.batter.id, p]));
+        const latestById = new Map(lineupFiltered.map(p => [p.batter.id, p]));
         const prevStartedUpdated = prevStarted.map(p => latestById.get(p.batter.id) || p);
-        const newUnstarted = deduped.filter(p => !startedPlayerIds.has(p.batter.id));
+        const newUnstarted = lineupFiltered.filter(p => !startedPlayerIds.has(p.batter.id));
 
         const merged = [...prevStartedUpdated, ...newUnstarted];
         merged.sort((a, b) => {
@@ -338,9 +375,9 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
         return;
       }
 
-      setPicks(deduped);
+      setPicks(lineupFiltered);
       const confirmedCount = [...lineupMap.values()].filter(v => v.home.status === "confirmed" || v.away.status === "confirmed").length;
-      _scoreCache[date] = { picks: deduped, teams: teamsList || teams, ts: Date.now(), confirmedCount };
+      _scoreCache[date] = { picks: lineupFiltered, teams: teamsList || teams, ts: Date.now(), confirmedCount };
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -400,11 +437,13 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
       const l15 = computeSplit(gl, 15);
       const l30 = computeSplit(gl, 30);
       const streak = computeActiveStreak(gl);
+
+      // V4 bounce-back signal: compute streak broken by yesterday's 0-for
       const { prevStreak } = computePreviousStreak(gl);
 
-      // Season-long games with hit stats (for consistency signal)
-      const seasonGwH   = gl.filter(g => +g.hits > 0).length;
-      const seasonGames = gl.length;
+      // Season games-with-hit counts for GwH rate signal
+      const seasonGwH   = seasonStat.gamesWithHit   ?? gl.filter(g => parseInt(g.hits) > 0).length;
+      const seasonGames = seasonStat.gamesPlayed     ?? gl.length;
 
       const platoonKey = pitcher.hand === "L" ? "vs. Left" : "vs. Right";
       const platoonStat = platData[platoonKey] || {};
@@ -431,9 +470,11 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
         hasBvP, lineupPos, pitcherDaysRest,
         weather: game.weather, venue: game.venue,
         statcast,
-        seasonGwH, seasonGames,
+        // V4 signals
         activeStreak: streak,
         prevStreak,
+        seasonGwH,
+        seasonGames,
       });
 
       // Prop line lookup (non-blocking — loads if Odds API key is configured)
@@ -442,7 +483,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
 
       const hot = isPlayerHot(streak, l7?.avg, scoreData.score);
 
-      return { batter, pitcher, game, battingTeam, scoreData, l1, l3, l7, l14, l15, l30, streak, bvpStat, platoonStat, dayNightStat, seasonStat, pitStat, pf, hasBvP, propLine, hot, lineupPos, lineupStatus, isFallback: isThin, statcast, seasonGwH, seasonGames };
+      return { batter, pitcher, game, battingTeam, scoreData, l1, l3, l7, l14, l15, l30, streak, prevStreak, bvpStat, platoonStat, dayNightStat, seasonStat, pitStat, pf, hasBvP, propLine, hot, lineupPos, lineupStatus, isFallback: isThin, statcast, seasonGwH, seasonGames };
     } catch { return null; }
   }
 
@@ -456,6 +497,9 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
     if (filterTeam !== "all" && p.battingTeam.team !== filterTeam) return false;
     return true;
   });
+
+  // Reset display limit when filters change so user always starts at top of results
+  useEffect(() => { setDisplayLimit(50); }, [filterTier, filterTeam, sortCol, sortDir]);
 
   const sorted = [...filtered].sort((a,b) => {
     const get = r => {
@@ -478,6 +522,11 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
     ...p,
     _pct: Math.max(1, Math.ceil(((i + 1) / sorted.length) * 100)),
   }));
+
+  // Progressive display — always evaluate full pool, render top N
+  // Reset limit when date or filters change so you always start at top 50
+  const visibleRows = sortedWithPct.slice(0, displayLimit);
+  const hasMore = sortedWithPct.length > displayLimit;
 
   const top10 = sortedWithPct.slice(0, 10);
   const beatStreakMode = mode === "bts";
@@ -502,7 +551,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
         </div>
       </div>
 
-      {/* Progress */}
+      {/* Progress — shown as overlay banner when streaming (picks > 0) or full card on empty */}
       {loading && picks.length === 0 && (
         <div className="card" style={{ padding: "24px", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
@@ -559,8 +608,24 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
         );
       })()}
 
-      {!loading && picks.length > 0 && (
+      {/* Show picks even while loading (streaming mode) — table populates as players are scored */}
+      {picks.length > 0 && (
         <>
+          {/* Slim scoring progress banner — only visible during streaming */}
+          {loading && progress.total > 0 && (
+            <div style={{ marginBottom: 12, padding: "8px 14px", borderRadius: 8, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)", display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="spinner" style={{ width: 12, height: 12, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ height: 4, background: "var(--border)", borderRadius: 100, overflow: "hidden" }}>
+                  <div style={{ height: "100%", background: "linear-gradient(90deg, var(--accent), var(--navy))", borderRadius: 100, width: `${(progress.done / progress.total) * 100}%`, transition: "width 0.3s ease" }} />
+                </div>
+              </div>
+              <span style={{ fontSize: 11, color: "var(--yellow)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                {progress.done}/{progress.total} scored
+              </span>
+            </div>
+          )}
+
           {/* LINEUP STATUS BANNER */}
           <LineupStatusBar statusMap={lineupStatusMap} />
 
@@ -618,7 +683,16 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
               </div>
             </div>
             <div style={{ marginLeft: "auto", alignSelf: "flex-end", display: "flex", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)", alignSelf: "center" }}>{sorted.length} players</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", alignSelf: "center" }}>
+                {loading ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <div className="spinner" style={{ width: 10, height: 10 }} />
+                    {picks.length > 0 ? `${picks.length} scored so far…` : "Scoring…"}
+                  </span>
+                ) : (
+                  `${sorted.length} players`
+                )}
+              </span>
             </div>
           </div>
 
@@ -668,7 +742,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {!isPremium && sortedWithPct.length > 5 && (
+                  {sortedWithPct.length > 5 && !isPremium && (
                     <tr>
                       <td colSpan="99" style={{ padding: "10px 16px", background: "linear-gradient(90deg, rgba(245,158,11,0.06), rgba(21,128,61,0.06))", textAlign: "center", borderBottom: "1px solid rgba(245,158,11,0.1)" }}>
                         <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle", color: "var(--yellow)", marginRight: 6 }}>lock</span>
@@ -680,7 +754,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                       </td>
                     </tr>
                   )}
-                  {sortedWithPct.map((p, i) => {
+                  {visibleRows.map((p, i) => {
                     const score = showBvP ? p.scoreData.withBvP : p.scoreData.withoutBvP;
                     const color = scoreColor(score);
                     const lockCount = 5;
@@ -749,7 +823,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                         <td>
                           <WeatherCell weather={p.game.weather} venue={p.game.venue} />
                         </td>
-                        <td title={p.scoreData.breakdown ? `Contact: ${p.scoreData.breakdown.contact}/38 · Form: ${p.scoreData.breakdown.form}/27 · Matchup: ${p.scoreData.breakdown.matchup}/24 · Statcast: ${p.scoreData.breakdown.statcast}/9 · Env: ${p.scoreData.breakdown.env}/4 | Streak: ${p.scoreData.breakdown.activeStreak}G (+${p.scoreData.breakdown.streakBonus}) · BncBk: ${p.scoreData.breakdown.prevStreak}G (+${p.scoreData.breakdown.bounceBackBonus}) · Whiff: ${p.scoreData.breakdown.whiffPct}% · PA%: ${p.scoreData.breakdown.paProbPct}% · L14: ${p.scoreData.breakdown.l14avg} · L30: ${p.scoreData.breakdown.l30avg} · Hit%: ${p.scoreData.breakdown.seasonHitRatePct}%` : ""}>
+                        <td title={p.scoreData.breakdown ? `Contact: ${p.scoreData.breakdown.contact}/35 · Form: ${p.scoreData.breakdown.form}/25 · Matchup: ${p.scoreData.breakdown.matchup}/25 · Statcast: ${p.scoreData.breakdown.statcast}/10 · Env: ${p.scoreData.breakdown.env}/5` : ""}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                             <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color, lineHeight: 1 }}>{score}</div>
                             <div style={{ display:"flex", gap:4, alignItems:"center" }}>
@@ -843,6 +917,22 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                 </tbody>
               </table>
             </div>
+            {/* Load More / streaming status */}
+            {(hasMore || loading) && (
+              <div style={{ padding: "14px 18px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  Showing <strong style={{ color: "var(--text-secondary)" }}>{visibleRows.length}</strong> of <strong style={{ color: "var(--text-secondary)" }}>{sorted.length}</strong> players
+                  {loading && picks.length > 0 && <span style={{ marginLeft: 8, color: "var(--yellow)" }}>· still scoring…</span>}
+                </span>
+                {hasMore && (
+                  <button className="btn btn-sm" onClick={() => setDisplayLimit(l => l + 50)}
+                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 11 }}>
+                    <span className="material-icons" style={{ fontSize: 14 }}>expand_more</span>
+                    Show next 50
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}
