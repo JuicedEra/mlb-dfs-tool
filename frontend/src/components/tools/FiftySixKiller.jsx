@@ -3,20 +3,24 @@
 // Composite score: lineup pos, rolling hit rate, PA probability, park factor, pitcher K%, home/road risk
 // Formula hidden — confidence bars + tier labels + factor pills only
 //
-// CHANGELOG v2.1
+// CHANGELOG v2.2
 // - Fix: no-games date now shows error message instead of silent blank screen
 // - Fix: fetchConfirmedLineups failure now falls back to fetchLineupOrder (boxscore) + roster merge
 //        for named, ordered candidates — prevents all candidates being unconfirmed roster dumps
+// - Fix: player names — when roster lookup misses (spring training expanded rosters), resolve
+//        each unknown ID individually via fetchPersonInfo(/people/{id}) for accurate names
 // - Fix: unconfirmed lineup scoring boosted (lineupScore 10→18, paScore 7→10) so roster-fallback
 //        players score in the 45-65 range and pass the confidence filter
 // - Fix: confidence filter lowered from ≥60 to ≥40 so early-season / pre-lineup data surfaces results
 // - Fix: interim + final threshold unified at CONF_THRESHOLD constant for easy future tuning
+// - UI: summary bar copy changed from "X plays found" → "X hitters picked"
 
 import { useState, useCallback, useRef } from "react";
 import {
   fetchGames,
   fetchConfirmedLineups,
   fetchLineupOrder,
+  fetchPersonInfo,
   fetchGameLog,
   fetchPitcherStats,
   fetchRoster,
@@ -376,6 +380,8 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
           // ── Fallback 1: boxscore batting order + roster name merge ────────
           // fetchLineupOrder is lighter (/boxscore) and more reliable pre-game
           // than /feed/live. Returns ordered IDs; cross-reference roster for names.
+          // Spring training rosters are expanded (60+ players) so the active roster
+          // may not contain every batter — resolve unknowns via fetchPersonInfo.
           if (lineup.length < 5 && battingTeam?.teamId) {
             try {
               const [orderData, roster] = await Promise.all([
@@ -385,11 +391,31 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
               const orderIds = orderData[side] ?? [];
               if (orderIds.length >= 1) {
                 const rosterMap = new Map(roster.map(p => [p.id, p]));
+
+                // Resolve any IDs not in the active roster individually
+                const missingIds = orderIds.filter(id => !rosterMap.has(id));
+                if (missingIds.length > 0) {
+                  const resolved = await Promise.allSettled(
+                    missingIds.map(id => fetchPersonInfo(id).catch(() => null))
+                  );
+                  resolved.forEach((r, i) => {
+                    if (r.status === "fulfilled" && r.value) {
+                      rosterMap.set(missingIds[i], r.value);
+                    }
+                  });
+                }
+
                 lineup = orderIds.map((id, idx) => {
-                  const p = rosterMap.get(id) ?? { id, name: `Player ${id}`, position: "?", batSide: "?" };
-                  return { id, name: p.name ?? p.fullName ?? `Player ${id}`, position: p.position, batSide: p.batSide, order: idx + 1 };
+                  const p = rosterMap.get(id) ?? { id, name: `Unknown (${id})`, position: "?", batSide: "?" };
+                  return {
+                    id,
+                    name:     p.name ?? p.fullName ?? `Unknown (${id})`,
+                    position: p.position,
+                    batSide:  p.batSide,
+                    order:    idx + 1,
+                  };
                 });
-                confirmed = orderIds.length >= 9; // full order = confirmed
+                confirmed = orderIds.length >= 9;
               }
             } catch { /* fall through to roster fallback */ }
           }
@@ -799,7 +825,7 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
                 );
               })}
               <span style={{ marginLeft: "auto" }}>
-                {isLoading ? `${progress.scored} scored…` : `${picks.length} plays found`}
+                {isLoading ? `${progress.scored} scored…` : `${picks.length} hitter${picks.length !== 1 ? "s" : ""} picked`}
               </span>
             </div>
 
