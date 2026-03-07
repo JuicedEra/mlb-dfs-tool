@@ -4,8 +4,8 @@ import {
   fetchAllLineups, 
   computeHitScore, 
   headshot 
-} from '../../utils/mlbApi';
-import { openAddPick } from './PickTracker';
+} from '../../utils/mlbApi'; //
+import { openAddPick } from './PickTracker'; //
 
 export default function FiftySevenKiller() {
   const [candidates, setCandidates] = useState([]);
@@ -24,18 +24,17 @@ export default function FiftySevenKiller() {
 
         const now = new Date();
 
+        // Use the EXACT paths from your screenshots: p.batter.id and p.game.gameDate
         const processed = games.map(p => {
-          // Use the paths seen in your screenshots: p.batter.id and p.game.gameDate
-          const bId = p.batter?.id || p.batterId;
-          const gDate = p.game?.gameDate || p.gameDate;
+          const bId = p.batter?.id; 
+          const gDate = p.game?.gameDate;
           
           return {
             ...p,
             id: bId,
-            displayDate: gDate,
             hitScore: typeof computeHitScore === 'function' ? computeHitScore(p) : 0,
             img: headshot(bId),
-            // Lineup check based on your screenshot's structure
+            // Lineup check: scans the lineup array for the player ID
             isStarting: lineups?.some(l => 
               l.lineup?.some(hitter => String(hitter.id) === String(bId))
             ),
@@ -43,9 +42,9 @@ export default function FiftySevenKiller() {
           };
         });
 
-        // Filter: Hide started games, and sort by highest score
+        // FILTER: Only show players whose games HAVE NOT started
         const topTen = processed
-          .filter(p => !p.gameStarted)
+          .filter(p => !p.gameStarted && p.id) 
           .sort((a, b) => b.hitScore - a.hitScore)
           .slice(0, 10);
 
@@ -59,20 +58,21 @@ export default function FiftySevenKiller() {
     loadKillerData();
   }, []);
 
-  if (loading) return <div className="p-20 text-center text-[var(--text-secondary)]">Crunching MLB Data...</div>;
+  if (loading) return <div className="p-20 text-center text-[var(--text-secondary)]">Syncing with MLB Lineups...</div>;
 
   return (
-    <div className="max-w-5xl mx-auto p-4">
+    <div className="max-w-5xl mx-auto p-4 animate-in fade-in">
       <header className="mb-8 border-b border-[var(--border)] pb-6">
         <h1 className="text-5xl font-black italic tracking-tighter text-[var(--text-primary)]" style={{ fontFamily: 'var(--font-display)' }}>
           57 <span className="text-red-500">KILLER</span>
         </h1>
-        <p className="text-[var(--text-secondary)] font-medium mt-1 uppercase tracking-wider text-xs">Confirmed Lineups + Hit Probability</p>
+        <p className="text-[var(--text-secondary)] font-medium mt-1">Confirmed Lineups + High Contact Probability</p>
       </header>
 
       {candidates.length === 0 ? (
         <div className="p-10 text-center bg-[var(--surface)] rounded-2xl border border-[var(--border)]">
-          <p className="text-[var(--text-secondary)]">No active matchups found for today.</p>
+          <p className="text-[var(--text-secondary)] font-bold">No active matchups found.</p>
+          <p className="text-xs text-[var(--text-secondary)] opacity-50">Lineups may not be confirmed yet for today's slate.</p>
         </div>
       ) : (
         <div className="grid gap-3">
@@ -80,7 +80,7 @@ export default function FiftySevenKiller() {
             <div 
               key={player.id || idx}
               className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4 flex items-center gap-4 hover:border-red-500 transition-all cursor-pointer group"
-              onClick={() => openAddPick(player)}
+              onClick={() => openAddPick(player)} //
             >
               <div className="text-xl font-black text-[var(--text-secondary)] w-6 opacity-30">{idx + 1}</div>
               
