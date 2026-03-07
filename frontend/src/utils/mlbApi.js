@@ -236,6 +236,25 @@ export function computeActiveStreak(games) {
   return streak;
 }
 
+// ── Previous streak length (for bounce-back detection) ───────────────────
+// Returns the length of the most recently BROKEN streak.
+// games[0] = most recent game (sorted desc by date).
+// Pattern: current streak is 0 (L1 was 0-for), then we count the run
+// of hit games immediately before that 0-for.
+// bounceBack = true only when L1 was 0-for AND prior run was 5+ games.
+export function computePreviousStreak(games) {
+  if (!games.length) return { prevStreak: 0, bounceBack: false };
+  // games[0] must be a 0-for for bounce-back to apply
+  if (+games[0]?.hits > 0) return { prevStreak: 0, bounceBack: false };
+  // Count the streak that ended with yesterday's 0-for
+  let prev = 0;
+  for (let i = 1; i < games.length; i++) {
+    if (+games[i].hits > 0) prev++;
+    else break;
+  }
+  return { prevStreak: prev, bounceBack: prev >= 5 };
+}
+
 // ── Season games with hit (for "Most Games w/ Hit" leaderboard) ───────────
 export function computeGamesWithHit(games) {
   return games.filter(g => +g.hits > 0).length;
@@ -718,7 +737,7 @@ export async function fetchABSForDate(date) {
 // ── HIT SCORE ALGORITHM ──────────────────────────────────────────────────
 // Weights based on user priority ranking
 // Returns: { score, withBvP, withoutBvP, factors }
-export function computeHitScore({ l3, l7, l15, bvp, platoon, parkFactor, seasonAvg, seasonStats, dayNight, isHome, pitcherSeasonAvgAgainst, pitcherStats, hasBvP, lineupPos, pitcherDaysRest, weather, venue, statcast, l1 }) {
+export function computeHitScore({ l1, l3, l7, l14, l15, l30, bvp, platoon, parkFactor, seasonAvg, seasonStats, dayNight, isHome, pitcherSeasonAvgAgainst, pitcherStats, hasBvP, lineupPos, pitcherDaysRest, weather, venue, statcast, seasonGwH, seasonGames, activeStreak, prevStreak }) {
   // ── Normalization helpers ────────────────────────────────────────────
   const norm = (avg, lo=0, hi=0.400) => Math.min(Math.max((parseFloat(avg)||0 - lo)/(hi-lo), 0), 1);
   const clamp = (v, lo=0, hi=1) => Math.min(Math.max(v, lo), hi);
@@ -762,92 +781,169 @@ export function computeHitScore({ l3, l7, l15, bvp, platoon, parkFactor, seasonA
   const bvpReliable = hasBvP && bvpAB >= 10;
   const bvpSomewhat = hasBvP && bvpAB >= 5;
 
-  // L3/L1 availability
-  const l3avg = parseFloat(l3?.avg) || 0;
-  const l1hits = parseInt(l1?.hits) || 0;
-  const l7avg = parseFloat(l7?.avg) || 0;
-  const l7gwh = parseInt(l7?.gamesWithHit) || 0;
-  const l7games = parseInt(l7?.games) || 0;
+  // L1/L3/L7/L14/L30 availability
+  const l3avg   = parseFloat(l3?.avg)  || 0;
+  const l1hits  = parseInt(l1?.hits)   || 0;
+  const l7avg   = parseFloat(l7?.avg)  || 0;
+  const l7gwh   = parseInt(l7?.gamesWithHit) || 0;
+  const l7games = parseInt(l7?.games)  || 0;
+  const l14avg  = parseFloat(l14?.avg) || 0;
+  const l30avg  = parseFloat(l30?.avg) || 0;
+
+  // Season games with hit — consistency across full season
+  // seasonGwH = count of games with ≥1 hit, seasonGames = total games played
+  const sGwH    = parseInt(seasonGwH)   || 0;
+  const sGames  = parseInt(seasonGames) || 0;
+  const seasonHitRate = sGames > 0 ? sGwH / sGames : 0.61; // league avg ~61%
+
+  // Whiff% (batter) — from Statcast whiff_percent field
+  // League avg ~24%. Elite contact: <15%. High swing-and-miss: >30%
+  const whiffPct = parseFloat(sc.whiff_percent) || 24; // default to league avg if missing
+
+  // PA Probability — estimated likelihood of reaching 4+ plate appearances
+  // Derived from lineup position × pitcher WHIP (controls lineup cycling speed)
+  // Higher WHIP → faster cycling → more PA for all batters
+  // Base PA/game by lineup slot, then WHIP-adjusted
+  const basePABySlot = lineupPos <= 2 ? 4.3 : lineupPos <= 4 ? 4.0 : lineupPos <= 6 ? 3.7 : lineupPos <= 8 ? 3.4 : 3.1;
+  const whipAdj      = clamp((rPitWhip - 1.00) / 0.80) * 0.3; // 0 at WHIP 1.0, +0.3 at WHIP 1.8
+  const estPA        = basePABySlot + whipAdj;
+  // Convert to probability of getting 4+ PA (sigmoid-style, centered at ~3.8 PA)
+  const paProbability = clamp((estPA - 2.8) / 2.2); // 2.8 PA → 0, 5.0 PA → 1
 
   // ═══════════════════════════════════════════════════════════════════
-  // NEW V2 ALGORITHM — Contact-first, plate-appearance-weighted
-  // Total: 100 points across 5 tiers
+  // V4 ALGORITHM — Contact-first, PA-probability-weighted, streak-aware
+  // Total: 100 points across 5 tiers (streak/bounce-back bonus ≤5 pts additive)
+  // New vs V3: Streak day modifier (0–3), Bounce-back (3–5), Signed L1 (−1/0/+2)
   // ═══════════════════════════════════════════════════════════════════
 
-  // ── TIER 1: CONTACT & OPPORTUNITY (35 pts) ──────────────────────
-  // This is the #1 predictor: can the batter make contact and will they get enough PA?
+  // ── TIER 1: CONTACT & OPPORTUNITY (38 pts) ──────────────────────
+  // Core predictor: can the batter make contact, get PA volume, and turn it into hits?
 
-  // K% inverse (15 pts) — low K% = more balls in play = more hit chances
+  // K% inverse (12 pts) — low K% = more balls in play = more hit chances
   // League avg K% ~22%. Elite contact: <12%. Poor: >30%
-  const kScore = clamp(1 - (kPct / 0.35)) * 15;
+  const kScore = clamp(1 - (kPct / 0.35)) * 12;
+
+  // Whiff% inverse (5 pts) — swing-and-miss rate, tighter signal than K%
+  // League avg ~24%. Elite: <15% (full 5 pts). High: >35% (0 pts).
+  // Whiff% penalizes batters who miss the ball even when they swing — K% penalizes outcomes.
+  // Together they capture both ends of contact quality.
+  const whiffScore = clamp(1 - ((whiffPct - 10) / 30)) * 5; // 10%=5pts, 40%=0pts
 
   // Lineup position (10 pts) — more PA = more chances
   // 1st-2nd: ~4.5 PA/g, 3rd-5th: ~4.0, 6th-7th: ~3.5, 8th-9th: ~3.2
   const lpScore = lineupPos <= 2 ? 10 : lineupPos <= 5 ? 7 : lineupPos <= 7 ? 4 : lineupPos <= 9 ? 2 : 1;
 
-  // Away team top-5 bonus (3 pts) — guaranteed to bat in 9th inning
-  const awayBonus = (!isHome && lineupPos <= 5) ? 3 : 0;
+  // Away team top-5 bonus (2 pts) — guaranteed to bat in 9th inning
+  const awayBonus = (!isHome && lineupPos <= 5) ? 2 : 0;
 
-  // BABIP (7 pts) — ability to turn contact into hits (league avg .300)
-  const babipScore = clamp((babip - 0.240) / 0.120) * 7; // .240=0, .360=1
+  // BABIP (6 pts) — ability to turn contact into hits (league avg .300)
+  const babipScore = clamp((babip - 0.240) / 0.120) * 6; // .240=0, .360=1
 
-  const contactTier = kScore + lpScore + awayBonus + babipScore;
+  // PA Probability (8 pts) — estimated likelihood of reaching 4+ plate appearances
+  // Derived from lineup slot + opponent WHIP. Higher WHIP = faster cycling = more PA.
+  const paScore = paProbability * 8;
 
-  // ── TIER 2: RECENT FORM (25 pts) ───────────────────────────────
-  // Hot hand is real in baseball — momentum matters
+  const contactTier = kScore + whiffScore + lpScore + awayBonus + babipScore + paScore;
 
-  // L7 AVG (12 pts) — primary recent signal
-  const l7Score = norm(l7?.avg) * 12;
+  // ── TIER 2: RECENT FORM (27 pts) ───────────────────────────────
+  // Hot hand is real in baseball — multi-window momentum + streak state
 
-  // L3 AVG (6 pts) — immediate form
-  const l3Score = norm(l3?.avg) * 6;
+  // L7 AVG (10 pts) — primary recent signal
+  const l7Score = norm(l7?.avg) * 10;
 
-  // L1 hit bonus (2 pts) — got a hit yesterday = in rhythm
-  const l1Score = l1hits > 0 ? 2 : 0;
+  // L3 AVG (4 pts) — immediate form
+  const l3Score = norm(l3?.avg) * 4;
 
-  // Games with hit / last 7 (5 pts) — consistency, not just one big game
-  const gwhScore = l7games > 0 ? (l7gwh / l7games) * 5 : 0;
+  // L14 AVG (1 pt) — bridge between hot and sustained
+  const l14Score = norm(l14?.avg) * 1;
 
-  const formTier = l7Score + l3Score + l1Score + gwhScore;
+  // L30 AVG (1 pt) — sustained trend baseline
+  const l30Score = norm(l30?.avg) * 1;
 
-  // ── TIER 3: MATCHUP QUALITY (25 pts) ───────────────────────────
+  // ── L1: Signed signal — hit=+2, cold 0-for=−1, bounce-back 0-for=0 (handled below)
+  // Bounce-back takes priority: if prevStreak>=5 and L1 was 0-for, skip the penalty.
+  const isBounceBack = (prevStreak || 0) >= 5 && l1hits === 0;
+  const l1Score = isBounceBack ? 0           // bounce-back overrides — no penalty
+    : l1hits > 0              ? 2            // hit yesterday: positive signal
+    : -1;                                    // 0-for yesterday: mild penalty
+
+  // Games with hit / last 7 (3 pts) — consistency in recent window
+  const gwhScore = l7games > 0 ? (l7gwh / l7games) * 3 : 0;
+
+  // Season games with hit rate (3 pts) — full-season consistency baseline
+  // League avg ~61%. Elite: >72%. Poor: <50%.
+  const seasonGwhScore = clamp((seasonHitRate - 0.45) / 0.35) * 3; // 45%=0, 80%=3pts
+
+  // ── STREAK DAY MODIFIER (max 3 pts) ─────────────────────────────
+  // Based on Retrosheet/Statcast research: hit rates peak at streak days 5-8,
+  // remain elevated through 15, then variance dominates above 20.
+  // Gating on L7 avg prevents crediting fluky/weak-contact streaks.
+  const str = activeStreak || 0;
+  let streakBonus = 0;
+  if (str >= 20 && l7avg >= 0.280) {
+    streakBonus = 0.5; // 20+d: small bonus, only if still genuinely hitting well
+  } else if (str >= 9 && str <= 19) {
+    streakBonus = l7avg >= 0.250 ? 1.5 : 0.5; // 9-15d: meaningful but tapering; gated
+  } else if (str >= 5 && str <= 8) {
+    streakBonus = 3; // 5-8d: peak zone — cleanest signal, no gate needed
+  }
+
+  // ── BOUNCE-BACK MODIFIER (max 5 pts, scaled by prior streak length) ──────
+  // After breaking a streak of 5+ games, next-game hit rates are meaningfully
+  // elevated vs baseline. Effect scales with how long the streak was.
+  // prevStreak = length of the streak broken by yesterday's 0-for.
+  // Research basis: Retrosheet multi-decade analysis of post-streak 0-for games.
+  let bounceBackBonus = 0;
+  if (isBounceBack) {
+    if ((prevStreak || 0) >= 15)      bounceBackBonus = 5;   // 75-78% hit rate documented
+    else if ((prevStreak || 0) >= 10) bounceBackBonus = 4;   // 71-73% hit rate
+    else if ((prevStreak || 0) >= 5)  bounceBackBonus = 3;   // 67-69% hit rate
+  }
+
+  // Cap combined streak modifier + bounce-back at 5 pts to prevent double inflation.
+  // They can't both fire simultaneously (streak>0 means not in bounce-back state)
+  // but the cap protects against edge cases (e.g. streak=0, large prevStreak).
+  const streakTotalBonus = Math.min(streakBonus + bounceBackBonus, 5);
+
+  const formTier = l7Score + l3Score + l14Score + l30Score + l1Score + gwhScore + seasonGwhScore + streakTotalBonus;
+
+  // ── TIER 3: MATCHUP QUALITY (24 pts) ───────────────────────────
   // Who are they facing? How good is the matchup?
 
-  // Platoon advantage (8 pts)
-  const platScore = norm(platoon?.avg) * 8;
+  // Platoon advantage (7 pts)
+  const platScore = norm(platoon?.avg) * 7;
 
   // BvP (5 pts max, scaled by sample reliability)
   const bvpScore = bvpReliable
     ? norm(bvp?.avg) * 5
     : bvpSomewhat ? norm(bvp?.avg) * 3 : 0;
 
-  // Pitcher hittability (10 pts) — cross-reference with our Pitcher Intel
-  // Higher AVG against, higher WHIP, lower K/9 = more hittable
-  const pitAvgScore = clamp((rPitAvg - 0.200) / 0.120) * 4;     // .200=0, .320=1
-  const pitWhipScore = clamp((rPitWhip - 1.00) / 0.60) * 3;     // 1.00=0, 1.60=1
-  const pitK9Score = clamp(1 - (pitK9 / 14)) * 3;               // 14K/9=0, low K/9=3
-  const pitcherScore = pitAvgScore + pitWhipScore + pitK9Score;
+  // Pitcher hittability (9 pts) — AVG against, WHIP, K/9
+  const pitAvgScore   = clamp((rPitAvg  - 0.200) / 0.120) * 3.5;  // .200=0, .320=1
+  const pitWhipScore  = clamp((rPitWhip - 1.00)  / 0.60)  * 2.5;  // 1.00=0, 1.60=1
+  const pitK9Score    = clamp(1 - (pitK9 / 14))            * 3;    // 14K/9=0, low=3
+  const pitcherScore  = pitAvgScore + pitWhipScore + pitK9Score;
 
   // Pitcher days rest bonus (2 pts) — rusty pitchers give up more hits
   const restScore = pitcherDaysRest >= 7 ? 2 : pitcherDaysRest >= 5 ? 1 : 0;
 
   const matchupTier = platScore + bvpScore + pitcherScore + restScore;
 
-  // ── TIER 4: STATCAST / TRUE TALENT (10 pts) ────────────────────
+  // ── TIER 4: STATCAST / TRUE TALENT (9 pts) ─────────────────────
   // Quality of contact metrics — predictive of future performance
 
-  const xbaScore = hasStatcast ? clamp((xba - 0.200) / 0.150) * 4 : 0;
-  const hardHitScore = hasStatcast ? clamp((hardHitPct - 25) / 25) * 3 : 0;
-  const barrelScore = hasStatcast ? clamp((barrelPct - 3) / 12) * 3 : 0;
+  const xbaScore      = hasStatcast ? clamp((xba        - 0.200) / 0.150) * 3.5 : 0;
+  const hardHitScore  = hasStatcast ? clamp((hardHitPct - 25)    / 25)    * 3   : 0;
+  const barrelScore   = hasStatcast ? clamp((barrelPct  - 3)     / 12)    * 2.5 : 0;
 
   // If no Statcast, fall back to season AVG as true talent (3 pts)
   const talentFallback = !hasStatcast ? norm(seasonAvg) * 3 : 0;
 
   const statcastTier = xbaScore + hardHitScore + barrelScore + talentFallback;
 
-  // ── TIER 5: ENVIRONMENT (5 pts) ────────────────────────────────
-  const envPark = parkScore * 3;
-  const envDN = norm(dayNight?.avg) * 2;
+  // ── TIER 5: ENVIRONMENT (4 pts) ────────────────────────────────
+  const envPark = parkScore * 2.5;
+  const envDN   = norm(dayNight?.avg) * 1.5;
   const envTier = envPark + envDN;
 
   // ═══════════════════════════════════════════════════════════════════
@@ -856,10 +952,10 @@ export function computeHitScore({ l3, l7, l15, bvp, platoon, parkFactor, seasonA
   const rawScore = contactTier + formTier + matchupTier + statcastTier + envTier;
   const _withBvP = Math.round(Math.min(rawScore, 100));
 
-  // Without BvP: redistribute those 5 pts to platoon and pitcher
+  // Without BvP: redistribute those 5 pts to platoon, pitcher, and season GwH
   const _withoutBvP = Math.round(Math.min(
     contactTier + formTier +
-    (platScore * 1.3 + pitcherScore * 1.2 + restScore) + // boosted matchup
+    (platScore * 1.3 + pitcherScore * 1.2 + restScore + seasonGwhScore * 1.1) +
     statcastTier + envTier,
     100
   ));
@@ -872,16 +968,36 @@ export function computeHitScore({ l3, l7, l15, bvp, platoon, parkFactor, seasonA
   // Contact factors
   if (kPct > 0 && kPct < 0.14) factors.push({ label: `K%: ${(kPct*100).toFixed(0)}% (elite)`, type: "green", icon: "sports_baseball" });
   else if (kPct > 0.28) factors.push({ label: `K%: ${(kPct*100).toFixed(0)}% (high)`, type: "red", icon: "warning" });
+  if (whiffPct < 15) factors.push({ label: `Whiff: ${whiffPct.toFixed(0)}% (elite)`, type: "green", icon: "sports_baseball" });
+  else if (whiffPct > 30) factors.push({ label: `Whiff: ${whiffPct.toFixed(0)}% (high)`, type: "red", icon: "warning" });
   if (babip >= 0.330) factors.push({ label: `BABIP: .${Math.round(babip*1000)}`, type: "green", icon: "query_stats" });
   if (lineupPos <= 2) factors.push({ label: `Lineup: #${lineupPos}`, type: "green", icon: "looks_one" });
   else if (lineupPos <= 5) factors.push({ label: `Lineup: #${lineupPos}`, type: "blue", icon: "format_list_numbered" });
+  if (paProbability >= 0.75) factors.push({ label: `PA Prob: ${Math.round(paProbability*100)}%`, type: "green", icon: "repeat" });
+  else if (paProbability < 0.45) factors.push({ label: `PA Prob: ${Math.round(paProbability*100)}%`, type: "red", icon: "repeat" });
 
   // Form factors
   if (l7avg >= 0.350) factors.push({ label: `L7: ${l7?.avg}`, type: "green", icon: "local_fire_department" });
   else if (l7avg >= 0.280) factors.push({ label: `L7: ${l7?.avg}`, type: "yellow", icon: "trending_up" });
   if (l3avg >= 0.400) factors.push({ label: `L3: ${l3?.avg}`, type: "green", icon: "bolt" });
+  if (l14avg >= 0.300) factors.push({ label: `L14: ${l14?.avg}`, type: "blue", icon: "trending_up" });
+  if (l30avg >= 0.290) factors.push({ label: `L30: ${l30?.avg}`, type: "blue", icon: "show_chart" });
+  // L1 signed signal
   if (l1hits >= 2) factors.push({ label: `${l1hits}H yesterday`, type: "green", icon: "history" });
   else if (l1hits === 1) factors.push({ label: "Hit yesterday", type: "blue", icon: "history" });
+  else if (!isBounceBack) factors.push({ label: "0-for yesterday", type: "red", icon: "history" });
+  // Streak modifier pills
+  if (str >= 20 && streakBonus > 0) factors.push({ label: `${str}G streak 🔥`, type: "green", icon: "local_fire_department" });
+  else if (str >= 9) factors.push({ label: `${str}G streak`, type: "green", icon: "trending_up" });
+  else if (str >= 5) factors.push({ label: `${str}G streak ⚡`, type: "green", icon: "bolt" });
+  // Bounce-back pill — most important surface
+  if (isBounceBack) {
+    const bbLabel = prevStreak >= 15 ? `Bounce-Back (broke ${prevStreak}G) 🎯`
+      : prevStreak >= 10 ? `Bounce-Back (broke ${prevStreak}G)`
+      : `Bounce-Back (broke ${prevStreak}G)`;
+    factors.push({ label: bbLabel, type: "green", icon: "replay" });
+  }
+  if (seasonHitRate >= 0.70) factors.push({ label: `Hit ${Math.round(seasonHitRate*100)}% of starts`, type: "green", icon: "bar_chart" });
 
   // Matchup factors
   if (hasBvP && parseFloat(bvp?.avg) >= 0.300) factors.push({ label: `BvP: ${bvp.avg}`, type: "green", icon: "sports_baseball" });
@@ -922,7 +1038,16 @@ export function computeHitScore({ l3, l7, l15, bvp, platoon, parkFactor, seasonA
     hasBvP, hasStatcast, factors, tier, tierLabel,
     statcast: hasStatcast ? { xba, barrelPct, hardHitPct } : null,
     // Debug: tier breakdown for tooltip
-    breakdown: { contact: Math.round(contactTier), form: Math.round(formTier), matchup: Math.round(matchupTier), statcast: Math.round(statcastTier), env: Math.round(envTier) },
+    breakdown: {
+      contact: Math.round(contactTier), form: Math.round(formTier),
+      matchup: Math.round(matchupTier), statcast: Math.round(statcastTier), env: Math.round(envTier),
+      // V4 sub-signals
+      whiffPct: whiffPct.toFixed(0), paProbPct: Math.round(paProbability*100),
+      l14avg: l14?.avg || "—", l30avg: l30?.avg || "—",
+      seasonHitRatePct: Math.round(seasonHitRate*100),
+      activeStreak: str, streakBonus: streakBonus.toFixed(1),
+      prevStreak: prevStreak || 0, bounceBackBonus: bounceBackBonus.toFixed(1),
+    },
   };
 }
 
