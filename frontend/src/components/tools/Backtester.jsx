@@ -5,6 +5,7 @@ import {
   fetchPitcherStats, fetchPitcherGameLog, fetchPersonInfo, PARK_FACTORS,
   computeHitScore, scoreColor, tierBadgeLabel, tierClass, headshot,
 } from "../../utils/mlbApi";
+import { compute57KillerScore } from "./FiftySevenKiller";
 import { btGetWeeklyUsage, btRecordUsage } from "../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -133,40 +134,50 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                 const roster = await fetchRoster(battingTeam.teamId);
                 starters = roster.slice(0, 9);
               }
-              for (const batter of starters) {
-                allBatters.push({ batter, pitcher, game, battingTeam, pitchingSide });
-              }
+              starters.forEach((batter, idx) => {
+                allBatters.push({ batter, lineupPos: idx + 1, pitcher, game, battingTeam, pitchingSide });
+              });
             } catch { /* skip */ }
           }
         }
 
         // 3. Compute scores (batches of 8 for speed)
-        const scored = [];
+        // Route to correct scorer: IQ uses computeHitScore, Killer uses compute57KillerScore
         const BATCH = 8;
-        for (let i = 0; i < allBatters.length; i += BATCH) {
-          if (abortRef.current) break;
-          const batch = allBatters.slice(i, i + BATCH);
-          const res = await Promise.allSettled(batch.map(b => scoreBatter(b, SEASON)));
-          for (const r of res) {
-            if (r.status === "fulfilled" && r.value) scored.push(r.value);
+
+        async function runScorer(fn) {
+          const scored = [];
+          for (let i = 0; i < allBatters.length; i += BATCH) {
+            if (abortRef.current) break;
+            const batch = allBatters.slice(i, i + BATCH);
+            const res = await Promise.allSettled(batch.map(b => fn(b, SEASON, date)));
+            for (const r of res) {
+              if (r.status === "fulfilled" && r.value) scored.push(r.value);
+            }
           }
+          return scored.sort((a, b) => b.score - a.score);
         }
 
-        scored.sort((a, b) => b.score - a.score);
-
-        // In "both" mode: take topN from IQ (all picks, same scorer for now)
-        // and topN tagged as "killer" — in future, killer will use its own scorer
-        // For now both use IQ V4 scores; killer picks are next-N slice (distinct picks)
         let topPicks = [];
         if (algoMode === "both") {
-          const iqPicks    = scored.slice(0, topN).map(p => ({ ...p, algo: "iq" }));
-          const killerPool = scored.slice(topN, topN * 2 + 5)
-            .filter(p => !iqPicks.find(q => q.batterId === p.batterId))
+          // Run both scorers independently — each uses its own algorithm
+          const [iqScored, killerScored] = await Promise.all([
+            runScorer(scoreBatter),
+            runScorer(scoreKillerBatter),
+          ]);
+          const iqPicks     = iqScored.slice(0, topN).map(p => ({ ...p, algo: "iq" }));
+          const iqIds       = new Set(iqPicks.map(p => p.batterId));
+          const killerPicks = killerScored
+            .filter(p => !iqIds.has(p.batterId))
             .slice(0, topN)
             .map(p => ({ ...p, algo: "killer" }));
-          topPicks = [...iqPicks, ...killerPool];
+          topPicks = [...iqPicks, ...killerPicks];
+        } else if (algoMode === "killer") {
+          const scored = await runScorer(scoreKillerBatter);
+          topPicks = scored.slice(0, topN).map(p => ({ ...p, algo: "killer" }));
         } else {
-          topPicks = scored.slice(0, topN).map(p => ({ ...p, algo: algoMode }));
+          const scored = await runScorer(scoreBatter);
+          topPicks = scored.slice(0, topN).map(p => ({ ...p, algo: "iq" }));
         }
 
         // 4. Fetch actual box scores and check hits
@@ -191,7 +202,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
 
     // Summary stats
     let totalPicks = 0, wins = 0, losses = 0, unknown = 0;
-    const tierHits = { elite: [0,0], strong: [0,0], solid: [0,0], risky: [0,0] };
+    const tierHits = { elite: [0,0], strong: [0,0], solid: [0,0], watch: [0,0], risky: [0,0] };
     for (const day of dayResults) {
       for (const p of day.picks) {
         totalPicks++;
@@ -266,6 +277,14 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
       {/* Config */}
       <div className="card" style={{ padding: "18px 22px", marginBottom: 20 }}>
 
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, padding: "8px 12px", borderRadius: 6,
+          background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.15)", fontSize: 11 }}>
+          <span className="material-icons" style={{ fontSize: 13, color: "var(--green-light)" }}>lock</span>
+          <span style={{ color: "var(--text-muted)" }}>
+            <span style={{ fontWeight: 700, color: "var(--green-light)" }}>Scores are date-locked</span>
+            {" "}— each day is scored using only data available on that date. Results won't shift on re-runs.
+          </span>
+        </div>
         {/* Free tier usage meter */}
         {!isPremium && (
           <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -370,8 +389,8 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
             <SummaryCard label="Total Picks" value={results.summary.totalPicks} icon="format_list_numbered" />
-            <SummaryCard label="Hits (Wins)" value={results.summary.wins} icon="check_circle" color="var(--green-light)" />
-            <SummaryCard label="No Hit (Loss)" value={results.summary.losses} icon="cancel" color="var(--red-data)" />
+            <SummaryCard label="Hits" value={results.summary.wins} icon="check_circle" color="var(--green-light)" />
+            <SummaryCard label="No Hits" value={results.summary.losses} icon="cancel" color="var(--red-data)" />
             <SummaryCard label="Hit Rate" value={`${results.summary.winRate}%`} icon="percent"
               color={parseFloat(results.summary.winRate) >= 70 ? "var(--green-light)" : parseFloat(results.summary.winRate) >= 55 ? "var(--yellow)" : "var(--red-data)"} />
           </div>
@@ -382,7 +401,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
               <span className="card-title"><span className="material-icons">leaderboard</span>Hit Rate by Tier</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
-              {["elite", "strong", "solid", "risky"].map(tier => {
+              {["elite", "strong", "solid", "watch", "risky"].map(tier => {
                 const [w, t] = results.summary.tierHits[tier] || [0,0];
                 const pct = t > 0 ? ((w / t) * 100).toFixed(0) : "—";
                 return (
@@ -470,7 +489,9 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
 }
 
 // Simplified scorer for backtesting (no lineup data, no prop lines)
-async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide }, season) {
+// cutoffDate: only use gamelog entries BEFORE this date — prevents future data leakage
+// This makes backtest scores stable and reproducible regardless of when you run them
+async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide }, season, cutoffDate) {
   try {
     // Resolve pitcher hand if missing
     if (!pitcher.hand || pitcher.hand === "?") {
@@ -489,7 +510,10 @@ async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide },
       fetchPitcherStats(pitcher.id, season),
       fetchPitcherGameLog(pitcher.id, season),
     ]);
-    let gl = gamelog.value || [];
+    // ── DATE BOUNDARY: only use data the algo would have had on cutoffDate ──
+    // Without this, backtest scores shift every time you re-run because the
+    // gamelog reflects current season stats, not what was true on the test date.
+    let gl = (gamelog.value || []).filter(g => !cutoffDate || g.date < cutoffDate);
     let bvpStat = bvp.value;
     let platData = platoon.value || {};
     let dnData = dayNight.value || {};
@@ -506,7 +530,9 @@ async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide },
         fetchPitcherStats(pitcher.id, season, "S"),
         fetchPitcherGameLog(pitcher.id, season, "S"),
       ]);
-      if (gl.length < 5) gl = [...gl, ...(stGL.value || [])];
+      // Apply same date boundary to spring training gamelog
+      const stGlBounded = (stGL.value || []).filter(g => !cutoffDate || g.date < cutoffDate);
+      if (gl.length < 5) gl = [...gl, ...stGlBounded];
       if (!seasonStat.avg) seasonStat = stSeason.value || seasonStat;
       if (!pitStat.avg) pitStat = stPitStat.value || pitStat;
       if (!pitLog.length) pitLog = stPitLog.value || pitLog;
@@ -556,6 +582,82 @@ async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide },
       pitcherId: pitcher.id, pitcherName: pitcher.name, pitcherHand: pitcher.hand,
       teamAbbr: battingTeam.abbr, gamePk: game.gamePk,
       score: scoreData.score, tier: scoreData.tier, hasBvP,
+    };
+  } catch { return null; }
+}
+
+// ─── 57 Killer scorer ────────────────────────────────────────────────────────
+// Distinct algorithm from IQ — prioritises lineup position + contact opportunity.
+// Only fetches what it needs: gamelog + pitcher K%.
+async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam, pitchingSide }, season, cutoffDate) {
+  try {
+    const [gamelog, pitcherStat] = await Promise.allSettled([
+      fetchGameLog(batter.id, season),
+      fetchPitcherStats(pitcher.id, season),
+    ]);
+
+    let gl      = (gamelog.value     || []).filter(g => !cutoffDate || g.date < cutoffDate);
+    let pitStat = pitcherStat.value  || {};
+
+    // Spring training fallback
+    if (gl.length < 5) {
+      const stGL = await fetchGameLog(batter.id, season, "S").catch(() => []);
+      gl = [...gl, ...stGL.filter(g => !cutoffDate || g.date < cutoffDate)];
+    }
+
+    const sorted = [...gl].sort((a, b) => b.date.localeCompare(a.date));
+
+    const sliceHits = (n) => {
+      let h = 0, pa = 0;
+      for (const g of sorted.slice(0, n)) { h += (g.hits ?? 0); pa += (g.ab ?? 0); }
+      return { hits: h, pa };
+    };
+    const s7  = sliceHits(7);
+    const s14 = sliceHits(14);
+    const s30 = sliceHits(30);
+
+    let activeStreak = 0;
+    for (const g of sorted) { if ((g.hits ?? 0) > 0) activeStreak++; else break; }
+
+    let prevStreak = 0;
+    if ((sorted[0]?.hits ?? 1) === 0) {
+      for (const g of sorted.slice(1)) { if ((g.hits ?? 0) > 0) prevStreak++; else break; }
+    }
+
+    const seasonHits = sorted.reduce((a, g) => a + (g.hits ?? 0), 0);
+    const seasonAB   = sorted.reduce((a, g) => a + (g.ab   ?? 0), 0);
+    const seasonAvg  = seasonAB >= 10 ? seasonHits / seasonAB : 0.250;
+
+    const pf          = PARK_FACTORS[game.venue]?.factor || 100;
+    const pitcherKPct = pitStat.kPct ?? null;
+    const isHome      = pitchingSide === "away";
+
+    const { confidence, tier } = compute57KillerScore({
+      lineupPos,
+      l7hits: s7.hits,   l7pa: s7.pa,
+      l14hits: s14.hits, l14pa: s14.pa,
+      l30hits: s30.hits, l30pa: s30.pa,
+      parkFactor: pf,
+      pitcherKPct,
+      isHome,
+      activeStreak,
+      prevStreak,
+      seasonAvg,
+      lineupConfirmed: true, // box score starters are confirmed
+    });
+
+    return {
+      batterId: batter.id, batterName: batter.name,
+      pitcherId: pitcher.id, pitcherName: pitcher.name, pitcherHand: pitcher.hand || "R",
+      teamAbbr: battingTeam.abbr, gamePk: game.gamePk,
+      score: confidence,
+      // Normalize tier label to match existing tierClass/tierBadgeLabel helpers
+      tier: tier.label === "ELITE"  ? "elite"
+          : tier.label === "STRONG" ? "strong"
+          : tier.label === "SOLID"  ? "solid"
+          : tier.label === "WATCH"  ? "watch"   // ← correct mapping (was "risky")
+          : "watch",
+      hasBvP: false,
     };
   } catch { return null; }
 }
