@@ -160,18 +160,17 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
 
         let topPicks = [];
         if (algoMode === "both") {
-          // Run both scorers independently — each uses its own algorithm
+          // Both mode: top 1 from each algo = exactly 2 picks/day (or topN if topN=1 means 1 total)
+          // Intent: show the best IQ pick + best 57K pick, deduped by batterId
           const [iqScored, killerScored] = await Promise.all([
             runScorer(scoreBatter),
             runScorer(scoreKillerBatter),
           ]);
-          const iqPicks     = iqScored.slice(0, topN).map(p => ({ ...p, algo: "iq" }));
-          const iqIds       = new Set(iqPicks.map(p => p.batterId));
-          const killerPicks = killerScored
-            .filter(p => !iqIds.has(p.batterId))
-            .slice(0, topN)
-            .map(p => ({ ...p, algo: "killer" }));
-          topPicks = [...iqPicks, ...killerPicks];
+          const iqTop     = iqScored[0]     ? { ...iqScored[0],     algo: "iq"     } : null;
+          const iqId      = iqTop?.batterId;
+          const killerTop = killerScored.find(p => p.batterId !== iqId);
+          const killerPick = killerTop ? { ...killerTop, algo: "killer" } : null;
+          topPicks = [iqTop, killerPick].filter(Boolean);
         } else if (algoMode === "killer") {
           const scored = await runScorer(scoreKillerBatter);
           topPicks = scored.slice(0, topN).map(p => ({ ...p, algo: "killer" }));
@@ -249,22 +248,14 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
             </button>
           ))}
         </div>
-        {/* BTS accuracy warning — escalates when both + topN >= 2 */}
-        {algoMode === "both" && topN >= 2 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 6,
-            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", fontSize: 11 }}>
-            <span className="material-icons" style={{ fontSize: 13, color: "var(--red-data)" }}>warning</span>
-            <span style={{ color: "var(--red-data)", fontWeight: 700 }}>BTS accuracy warning:</span>
-            <span style={{ color: "var(--text-muted)", marginLeft: 4 }}>
-              Both + Top {topN} = {topN * 2} picks/day. For accurate BTS simulation, use Top 1 or Top 2 only.
-            </span>
-          </div>
-        )}
-        {algoMode === "both" && topN === 1 && (
+        {/* BTS note — Both mode always produces exactly 2 picks/day */}
+        {algoMode === "both" && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 6,
             background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", fontSize: 11 }}>
             <span className="material-icons" style={{ fontSize: 13, color: "var(--yellow)" }}>info</span>
-            <span style={{ color: "var(--text-muted)" }}>Showing top 1 from each algo side-by-side — 2 picks/day total.</span>
+            <span style={{ color: "var(--text-muted)" }}>
+              Both mode shows the <strong style={{ color: "var(--text-secondary)" }}>#1 IQ pick + #1 57K pick</strong> per day — always 2 picks, deduped if same player.
+            </span>
           </div>
         )}
         {algoMode !== "both" && (
@@ -491,7 +482,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
 // Simplified scorer for backtesting (no lineup data, no prop lines)
 // cutoffDate: only use gamelog entries BEFORE this date — prevents future data leakage
 // This makes backtest scores stable and reproducible regardless of when you run them
-async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide }, season, cutoffDate) {
+async function scoreBatter({ batter, lineupPos, pitcher, game, battingTeam, pitchingSide }, season, cutoffDate) {
   try {
     // Resolve pitcher hand if missing
     if (!pitcher.hand || pitcher.hand === "?") {
@@ -560,7 +551,9 @@ async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide },
     const dnKey = game.isNight ? "Night" : "Day";
     const dayNightStat = dnData[dnKey] || {};
     const pf = PARK_FACTORS[game.venue]?.factor || 100;
-    const pitcherDaysRest = pitLog.length >= 1 ? Math.round((Date.now() - new Date(pitLog[0].date)) / 86400000) : 4;
+    // Use cutoffDate as reference for pitcher rest (not Date.now — that gives wrong rest on historical runs)
+    const restRef = cutoffDate ? new Date(cutoffDate + "T12:00:00") : new Date();
+    const pitcherDaysRest = pitLog.length >= 1 ? Math.round((restRef - new Date(pitLog[0].date)) / 86400000) : 4;
     const hasBvP = !!(bvpStat && (bvpStat.atBats >= 5));
 
     const scoreData = computeHitScore({
@@ -571,7 +564,7 @@ async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide },
       dayNight: dayNightStat, isHome: pitchingSide === "away",
       pitcherSeasonAvgAgainst: pitStat.avg,
       pitcherStats: pitStat,
-      hasBvP, lineupPos: 5, pitcherDaysRest,
+      hasBvP, lineupPos: lineupPos || 5, pitcherDaysRest,
       weather: game.weather, venue: game.venue,
       seasonGwH, seasonGames,
       activeStreak, prevStreak,
@@ -609,7 +602,7 @@ async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam
 
     const sliceHits = (n) => {
       let h = 0, pa = 0;
-      for (const g of sorted.slice(0, n)) { h += (g.hits ?? 0); pa += (g.ab ?? 0); }
+      for (const g of sorted.slice(0, n)) { h += +(g.hits ?? 0); pa += +(g.atBats ?? g.ab ?? 0); }
       return { hits: h, pa };
     };
     const s7  = sliceHits(7);
@@ -624,8 +617,8 @@ async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam
       for (const g of sorted.slice(1)) { if ((g.hits ?? 0) > 0) prevStreak++; else break; }
     }
 
-    const seasonHits = sorted.reduce((a, g) => a + (g.hits ?? 0), 0);
-    const seasonAB   = sorted.reduce((a, g) => a + (g.ab   ?? 0), 0);
+    const seasonHits = sorted.reduce((a, g) => a + +(g.hits ?? 0), 0);
+    const seasonAB   = sorted.reduce((a, g) => a + +(g.atBats ?? g.ab ?? 0), 0);
     const seasonAvg  = seasonAB >= 10 ? seasonHits / seasonAB : 0.250;
 
     const pf          = PARK_FACTORS[game.venue]?.factor || 100;
