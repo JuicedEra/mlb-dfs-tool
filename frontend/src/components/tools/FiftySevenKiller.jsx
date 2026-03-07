@@ -1,634 +1,732 @@
-// /src/pages/FiftySevenKiller.jsx
-// DiamondIQ — 57 Killer Page
-// Sits between IQ Picks and Back Tester in nav
+// src/components/tools/FiftySevenKiller.jsx
+// DiamondIQ PRO — 57 Killer Tool v2
+// Composite score: lineup pos, rolling hit rate, PA probability, park factor, pitcher K%, home/road risk
+// Formula hidden — confidence bars + tier labels + factor pills only
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  fetchGames,
+  fetchConfirmedLineups,
+  fetchGameLog,
+  fetchBvP,
+  fetchPitcherStats,
+  PARK_FACTORS,
+} from "../../utils/mlbApi";
 
-// ─── Algo weights (57 Killer composite) ────────────────────────────────────
-const WEIGHTS = {
-  lineupPosition: 0.30,
-  rollingHitRate: 0.25,
-  paProb:         0.20,
-  parkFactor:     0.10,
-  pitcherKPct:    0.10,
-  homeRisk:       0.05,
-};
+// ─── Tier config ────────────────────────────────────────────────────────────
+const TIERS = [
+  { label: "ELITE",    min: 90, color: "#f59e0b", bg: "rgba(245,158,11,0.15)",  border: "#f59e0b" },
+  { label: "STRONG",   min: 82, color: "#22c55e", bg: "rgba(34,197,94,0.12)",   border: "#22c55e" },
+  { label: "SOLID",    min: 74, color: "#38bdf8", bg: "rgba(56,189,248,0.10)",  border: "#38bdf8" },
+  { label: "WATCH",    min: 60, color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "#475569" },
+];
 
-// Lineup position PA multiplier (1=leadoff best, 9=worst)
-const LINEUP_PA_SCORE = [1.0, 0.95, 0.88, 0.82, 0.76, 0.70, 0.65, 0.60, 0.50];
-
-function compute57Score(player) {
-  const posScore  = LINEUP_PA_SCORE[Math.min((player.lineupPos || 1) - 1, 8)];
-  const rollScore = (
-    (player.hitRate7  || 0) * 0.40 +
-    (player.hitRate14 || 0) * 0.35 +
-    (player.hitRate30 || 0) * 0.25
-  );
-  const paScore      = Math.min((player.paProb || 0.6), 1.0);
-  const parkScore    = Math.min((player.parkFactor || 1.0) / 1.3, 1.0);
-  const kScore       = 1 - Math.min((player.pitcherKPct || 0.22), 0.40);
-  const homeRiskPen  = player.isHome ? 0.95 : 1.0;
-
-  const raw =
-    posScore  * WEIGHTS.lineupPosition +
-    rollScore * WEIGHTS.rollingHitRate +
-    paScore   * WEIGHTS.paProb         +
-    parkScore * WEIGHTS.parkFactor     +
-    kScore    * WEIGHTS.pitcherKPct    +
-    homeRiskPen * WEIGHTS.homeRisk;
-
-  return Math.min(Math.round(raw * 100), 99);
+function getTier(confidence) {
+  return TIERS.find(t => confidence >= t.min) || TIERS[TIERS.length - 1];
 }
 
-// ─── Mock data (replace with Supabase fetch) ────────────────────────────────
-const MOCK_PLAYERS = [
-  {
-    id: 1, name: "Freddie Freeman",   team: "LAD", opp: "@ SF",  lineupPos: 2,
-    hitRate7: 0.81, hitRate14: 0.76, hitRate30: 0.72,
-    paProb: 0.91, parkFactor: 1.08, pitcherKPct: 0.19, isHome: false,
-    pitcher: "Logan Webb", hand: "L vs R",
-    props: [
-      { line: "1+ Hits", odds: -165, recommended: true },
-      { line: "1.5+ Hits", odds: +210, recommended: false },
-    ],
-    avgHits: 1.4, lastGames: [1,1,1,0,1,1,1],
-  },
-  {
-    id: 2, name: "Steven Kwan",       team: "CLE", opp: "vs DET", lineupPos: 1,
-    hitRate7: 0.86, hitRate14: 0.79, hitRate30: 0.74,
-    paProb: 0.94, parkFactor: 1.02, pitcherKPct: 0.21, isHome: true,
-    pitcher: "Tarik Skubal", hand: "L vs L",
-    props: [
-      { line: "1+ Hits", odds: -180, recommended: true },
-      { line: "1.5+ Hits", odds: +180, recommended: false },
-    ],
-    avgHits: 1.3, lastGames: [1,1,0,1,1,1,1],
-  },
-  {
-    id: 3, name: "Luis Arraez",       team: "SD",  opp: "@ COL", lineupPos: 2,
-    hitRate7: 0.88, hitRate14: 0.82, hitRate30: 0.78,
-    paProb: 0.93, parkFactor: 1.28, pitcherKPct: 0.16, isHome: false,
-    pitcher: "Cal Quantrill", hand: "L vs R",
-    props: [
-      { line: "1+ Hits", odds: -195, recommended: true },
-      { line: "1.5+ Hits", odds: +155, recommended: true },
-      { line: "2+ Hits", odds: +380, recommended: false },
-    ],
-    avgHits: 1.6, lastGames: [1,1,1,1,0,1,1],
-  },
-  {
-    id: 4, name: "Yordan Alvarez",    team: "HOU", opp: "vs OAK", lineupPos: 3,
-    hitRate7: 0.72, hitRate14: 0.68, hitRate30: 0.65,
-    paProb: 0.88, parkFactor: 1.01, pitcherKPct: 0.24, isHome: true,
-    pitcher: "JP Sears", hand: "L vs R",
-    props: [
-      { line: "1+ Hits", odds: -145, recommended: true },
-      { line: "1+ HR", odds: +280, recommended: false },
-    ],
-    avgHits: 1.2, lastGames: [1,0,1,1,1,0,1],
-  },
-  {
-    id: 5, name: "Jose Abreu",        team: "BOS", opp: "@ NYY",  lineupPos: 1,
-    hitRate7: 0.74, hitRate14: 0.70, hitRate30: 0.67,
-    paProb: 0.95, parkFactor: 0.98, pitcherKPct: 0.20, isHome: false,
-    pitcher: "Carlos Rodón", hand: "R vs L",
-    props: [
-      { line: "1+ Hits", odds: -140, recommended: true },
-    ],
-    avgHits: 1.1, lastGames: [1,1,0,1,0,1,1],
-  },
-  {
-    id: 6, name: "Gunnar Henderson",  team: "BAL", opp: "vs TB",  lineupPos: 2,
-    hitRate7: 0.71, hitRate14: 0.69, hitRate30: 0.64,
-    paProb: 0.92, parkFactor: 1.04, pitcherKPct: 0.23, isHome: true,
-    pitcher: "Zach Eflin", hand: "L vs R",
-    props: [
-      { line: "1+ Hits", odds: -150, recommended: true },
-      { line: "1+ HR", odds: +320, recommended: false },
-    ],
-    avgHits: 1.2, lastGames: [0,1,1,1,1,0,1],
-  },
-  {
-    id: 7, name: "Elly De La Cruz",   team: "CIN", opp: "@ MIL",  lineupPos: 1,
-    hitRate7: 0.69, hitRate14: 0.65, hitRate30: 0.62,
-    paProb: 0.93, parkFactor: 0.99, pitcherKPct: 0.25, isHome: false,
-    pitcher: "Freddy Peralta", hand: "R vs R",
-    props: [
-      { line: "1+ Hits", odds: -130, recommended: true },
-      { line: "1+ SB", odds: +160, recommended: false },
-    ],
-    avgHits: 1.1, lastGames: [1,0,1,1,0,1,1],
-  },
-  {
-    id: 8, name: "Mookie Betts",      team: "LAD", opp: "@ SF",  lineupPos: 1,
-    hitRate7: 0.77, hitRate14: 0.71, hitRate30: 0.68,
-    paProb: 0.94, parkFactor: 1.08, pitcherKPct: 0.19, isHome: false,
-    pitcher: "Logan Webb", hand: "R vs L",
-    props: [
-      { line: "1+ Hits", odds: -160, recommended: true },
-    ],
-    avgHits: 1.3, lastGames: [1,1,1,0,1,0,1],
-  },
-  {
-    id: 9, name: "Trea Turner",       team: "PHI", opp: "vs ATL", lineupPos: 1,
-    hitRate7: 0.68, hitRate14: 0.66, hitRate30: 0.63,
-    paProb: 0.93, parkFactor: 1.05, pitcherKPct: 0.22, isHome: true,
-    pitcher: "Chris Sale", hand: "R vs L",
-    props: [
-      { line: "1+ Hits", odds: -135, recommended: true },
-    ],
-    avgHits: 1.1, lastGames: [1,1,0,0,1,1,1],
-  },
-  {
-    id: 10, name: "Ernie Clement",    team: "TOR", opp: "@ BOS", lineupPos: 2,
-    hitRate7: 0.82, hitRate14: 0.76, hitRate30: 0.70,
-    paProb: 0.92, parkFactor: 1.01, pitcherKPct: 0.14, isHome: false,
-    pitcher: "Brayan Bello", hand: "R vs R",
-    props: [
-      { line: "1+ Hits", odds: -155, recommended: true },
-    ],
-    avgHits: 1.2, lastGames: [1,1,1,0,1,1,1],
-  },
-].map(p => ({ ...p, score: compute57Score(p) }))
- .sort((a, b) => b.score - a.score);
+// ─── Factor pill definitions ─────────────────────────────────────────────────
+const FACTOR_DEFS = {
+  hotStreak:    { label: "🔥 Hot Streak",    activeColor: "#f59e0b" },
+  topOrder:     { label: "⚡ Top of Order",   activeColor: "#22c55e" },
+  parkFriendly: { label: "🏟️ Park Friendly",  activeColor: "#38bdf8" },
+  lowK:         { label: "🎯 Low-K Pitcher",  activeColor: "#a78bfa" },
+  homeAdvantage:{ label: "🏠 Home Advantage", activeColor: "#34d399" },
+  highPA:       { label: "📊 High PA Prob",   activeColor: "#fb923c" },
+  bounceBack:   { label: "↩️ Bounce-Back",    activeColor: "#f472b6" },
+};
+
+// ─── compute57KillerScore ────────────────────────────────────────────────────
+// Weights: lineupPos 30%, rollingHitRate 25%, paProbability 20%,
+//          parkFactor 10%, pitcherKInverse 10%, homeRoadRisk 5%
+// Returns { confidence, tier, factors[], breakdown_hidden }
+export function compute57KillerScore({
+  lineupPos,          // 1-9, null if unknown
+  l7hits, l7pa,       // last 7 games
+  l14hits, l14pa,
+  l30hits, l30pa,
+  parkFactor,         // numeric, ~100 = neutral
+  pitcherKPct,        // 0-1 fraction
+  isHome,
+  activeStreak,       // current consecutive hit game streak
+  prevStreak,         // streak before last 0-for (bounce-back signal)
+  seasonAvg,          // full season BA
+  lineupConfirmed,
+}) {
+  // 1. Lineup position (30pts)
+  let lineupScore = 0;
+  if (lineupPos != null) {
+    if (lineupPos <= 2) lineupScore = 30;
+    else if (lineupPos <= 4) lineupScore = 26;
+    else if (lineupPos <= 6) lineupScore = 18;
+    else if (lineupPos <= 7) lineupScore = 10;
+    else lineupScore = 5;
+  } else {
+    lineupScore = 10; // projected unknown
+  }
+
+  // 2. Rolling hit rate (25pts) — weighted blend L7>L14>L30
+  const safeRate = (h, pa) => (pa >= 3 ? h / pa : seasonAvg ?? 0.25);
+  const r7  = safeRate(l7hits,  l7pa);
+  const r14 = safeRate(l14hits, l14pa);
+  const r30 = safeRate(l30hits, l30pa);
+  const blendRate = r7 * 0.55 + r14 * 0.28 + r30 * 0.17;
+  const hitRateScore = Math.min(25, blendRate * 80); // .312+ → 25pts
+
+  // 3. PA probability (20pts) — proxy: lineupPos + confirmed
+  let paScore = 0;
+  if (lineupPos != null) {
+    const basePA = lineupPos <= 4 ? 20 : lineupPos <= 6 ? 15 : 10;
+    paScore = lineupConfirmed ? basePA : basePA * 0.75;
+  } else {
+    paScore = lineupConfirmed ? 12 : 7;
+  }
+
+  // 4. Park factor (10pts) — 110+ hitter-friendly, <90 pitcher's park
+  const pfScore = Math.min(10, Math.max(0, ((parkFactor ?? 100) - 85) / 3));
+
+  // 5. Pitcher K% inverse (10pts) — low K% pitcher = more contact opportunity
+  const kInverse = pitcherKPct != null ? Math.max(0, 1 - pitcherKPct) : 0.65;
+  const kScore = kInverse * 10;
+
+  // 6. Home/road risk (5pts)
+  const homeScore = isHome ? 5 : 2.5;
+
+  const raw = lineupScore + hitRateScore + paScore + pfScore + kScore + homeScore;
+  // Max theoretical ~100; clamp to 0-100
+  const confidence = Math.min(100, Math.max(0, Math.round(raw)));
+
+  // ─ Factor pills ─
+  const factors = [];
+  if (activeStreak >= 5) factors.push("hotStreak");
+  if (lineupPos != null && lineupPos <= 3) factors.push("topOrder");
+  if ((parkFactor ?? 100) >= 105) factors.push("parkFriendly");
+  if (pitcherKPct != null && pitcherKPct < 0.2) factors.push("lowK");
+  if (isHome) factors.push("homeAdvantage");
+  if (lineupPos != null && lineupPos <= 4 && lineupConfirmed) factors.push("highPA");
+  if (prevStreak >= 5) factors.push("bounceBack");
+
+  return { confidence, tier: getTier(confidence), factors };
+}
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function ConfidenceMeter({ score }) {
-  const color =
-    score >= 90 ? "#10b981" :
-    score >= 85 ? "#34d399" :
-    score >= 82 ? "#fbbf24" : "#f87171";
-
+function ConfidenceBar({ value, tier }) {
   return (
-    <div style={{ width: "100%", marginTop: 8 }}>
+    <div style={{ width: "100%", display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{
-        display: "flex", justifyContent: "space-between",
-        fontSize: 11, color: "var(--text-muted)", marginBottom: 4,
-        fontFamily: "'DM Mono', monospace",
-      }}>
-        <span>57K CONFIDENCE</span>
-        <span style={{ color, fontWeight: 700 }}>{score}%</span>
-      </div>
-      <div style={{
-        height: 6, background: "rgba(255,255,255,0.08)",
-        borderRadius: 99, overflow: "hidden",
+        flex: 1, height: 6, borderRadius: 3,
+        background: "rgba(255,255,255,0.08)",
+        overflow: "hidden",
       }}>
         <div style={{
-          height: "100%", width: `${score}%`,
-          background: `linear-gradient(90deg, ${color}99, ${color})`,
-          borderRadius: 99,
-          transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)",
-          boxShadow: `0 0 8px ${color}66`,
+          height: "100%",
+          width: `${value}%`,
+          background: `linear-gradient(90deg, ${tier.color}88, ${tier.color})`,
+          borderRadius: 3,
+          transition: "width 0.6s cubic-bezier(0.34,1.56,0.64,1)",
         }} />
       </div>
-    </div>
-  );
-}
-
-function MiniStreak({ games }) {
-  return (
-    <div style={{ display: "flex", gap: 3, marginTop: 6 }}>
-      {games.map((g, i) => (
-        <div key={i} style={{
-          width: 18, height: 18, borderRadius: 4,
-          background: g ? "rgba(16,185,129,0.25)" : "rgba(248,113,113,0.2)",
-          border: `1px solid ${g ? "#10b98155" : "#f8717155"}`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 9, color: g ? "#10b981" : "#f87171",
-          fontFamily: "'DM Mono', monospace",
-        }}>
-          {g ? "H" : "0"}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function OddsChip({ prop, isRec }) {
-  const sign = prop.odds > 0 ? "+" : "";
-  return (
-    <div style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      padding: "3px 8px", borderRadius: 6,
-      background: isRec ? "rgba(251,191,36,0.12)" : "rgba(255,255,255,0.05)",
-      border: `1px solid ${isRec ? "rgba(251,191,36,0.35)" : "rgba(255,255,255,0.08)"}`,
-      fontSize: 11,
-    }}>
-      {isRec && <span style={{ color: "#fbbf24", fontSize: 9 }}>★</span>}
-      <span style={{ color: "var(--text-muted)" }}>{prop.line}</span>
-      <span style={{
-        color: prop.odds < 0 ? "#34d399" : "#60a5fa",
-        fontFamily: "'DM Mono', monospace", fontWeight: 600,
-      }}>
-        {sign}{prop.odds}
+      <span style={{ fontSize: 13, fontWeight: 700, color: tier.color, minWidth: 34, textAlign: "right" }}>
+        {value}%
       </span>
     </div>
   );
 }
 
-function PlayerCard57({ player, rank, mode, selected, onSelect }) {
-  const isTop3 = rank <= 3;
-  const rankColor = rank === 1 ? "#fbbf24" : rank === 2 ? "#94a3b8" : rank === 3 ? "#c97d4e" : "var(--text-muted)";
-  const scoreColor =
-    player.score >= 90 ? "#10b981" :
-    player.score >= 85 ? "#34d399" :
-    player.score >= 82 ? "#fbbf24" : "var(--text-muted)";
+function TierBadge({ tier }) {
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 800, letterSpacing: "0.08em",
+      padding: "2px 7px", borderRadius: 4,
+      border: `1px solid ${tier.border}`,
+      color: tier.color, background: tier.bg,
+    }}>
+      {tier.label}
+    </span>
+  );
+}
 
-  const lineupLabel = player.lineupPos <= 2
-    ? `#${player.lineupPos} (Elite)`
-    : player.lineupPos <= 4
-    ? `#${player.lineupPos} (Good)`
-    : `#${player.lineupPos}`;
+function FactorPill({ factorKey }) {
+  const def = FACTOR_DEFS[factorKey];
+  if (!def) return null;
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600,
+      padding: "2px 8px", borderRadius: 20,
+      background: `${def.activeColor}18`,
+      border: `1px solid ${def.activeColor}55`,
+      color: def.activeColor,
+      whiteSpace: "nowrap",
+    }}>
+      {def.label}
+    </span>
+  );
+}
+
+function PlayerCard({ pick, rank }) {
+  const tier = pick.tier ?? getTier(pick.confidence);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div
-      onClick={() => onSelect(player.id)}
+      onClick={() => setExpanded(e => !e)}
       style={{
-        background: selected
-          ? "linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(6,182,212,0.06) 100%)"
-          : isTop3
-          ? "linear-gradient(135deg, rgba(251,191,36,0.05) 0%, rgba(255,255,255,0.03) 100%)"
-          : "rgba(255,255,255,0.03)",
-        border: selected
-          ? "1px solid rgba(16,185,129,0.4)"
-          : isTop3
-          ? "1px solid rgba(251,191,36,0.2)"
-          : "1px solid rgba(255,255,255,0.07)",
-        borderRadius: 14,
-        padding: "16px 18px",
+        background: "rgba(255,255,255,0.035)",
+        border: `1px solid ${expanded ? tier.border : "rgba(255,255,255,0.07)"}`,
+        borderLeft: `3px solid ${tier.color}`,
+        borderRadius: 10,
+        padding: "14px 16px",
         cursor: "pointer",
-        transition: "all 0.2s ease",
-        position: "relative",
-        overflow: "hidden",
+        transition: "border-color 0.2s, background 0.2s",
+        userSelect: "none",
       }}
+      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.055)"}
+      onMouseLeave={e => e.currentTarget.style.background = expanded ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.035)"}
     >
-      {/* Rank glow for top 3 */}
-      {isTop3 && (
-        <div style={{
-          position: "absolute", top: 0, left: 0,
-          width: "100%", height: 2,
-          background: `linear-gradient(90deg, transparent, ${rankColor}66, transparent)`,
-        }} />
-      )}
-
       {/* Header row */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Rank badge */}
-          <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: rank <= 3
-              ? `linear-gradient(135deg, ${rankColor}22, ${rankColor}11)`
-              : "rgba(255,255,255,0.05)",
-            border: `1px solid ${rankColor}44`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "'DM Mono', monospace", fontWeight: 700,
-            fontSize: 13, color: rankColor, flexShrink: 0,
-          }}>
-            {rank}
-          </div>
-
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>
-                {player.name}
-              </span>
-              {selected && (
-                <span style={{
-                  fontSize: 9, padding: "2px 6px", borderRadius: 4,
-                  background: "rgba(16,185,129,0.2)", color: "#10b981",
-                  fontFamily: "'DM Mono', monospace", letterSpacing: 1,
-                }}>SELECTED</span>
-              )}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-              {player.team} · {player.opp} · vs {player.pitcher} · <span style={{ color: "var(--text-secondary)" }}>{player.hand}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Score badge */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+        {/* Rank */}
         <div style={{
-          textAlign: "center",
-          background: `${scoreColor}15`,
-          border: `1px solid ${scoreColor}40`,
-          borderRadius: 10, padding: "6px 12px",
+          width: 28, height: 28, borderRadius: "50%",
+          background: rank <= 3 ? `${tier.color}22` : "rgba(255,255,255,0.06)",
+          border: `1px solid ${rank <= 3 ? tier.color : "rgba(255,255,255,0.1)"}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 12, fontWeight: 800, color: rank <= 3 ? tier.color : "#94a3b8",
           flexShrink: 0,
         }}>
-          <div style={{
-            fontSize: 22, fontWeight: 800, color: scoreColor,
-            fontFamily: "'DM Mono', monospace", lineHeight: 1,
-          }}>{player.score}</div>
-          <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 1 }}>/ 100</div>
+          {rank}
+        </div>
+
+        {/* Player info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.01em" }}>
+              {pick.name}
+            </span>
+            <TierBadge tier={tier} />
+            {pick.lineupPos && (
+              <span style={{ fontSize: 11, color: "#64748b" }}>#{pick.lineupPos}</span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+            {pick.team} · {pick.opponent} · {pick.venue}
+          </div>
+        </div>
+
+        {/* Confidence */}
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: tier.color, lineHeight: 1 }}>
+            {pick.confidence}
+          </div>
+          <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.05em" }}>CONF</div>
         </div>
       </div>
 
-      {/* Confidence meter */}
-      <ConfidenceMeter score={player.score} />
+      {/* Confidence bar */}
+      <ConfidenceBar value={pick.confidence} tier={tier} />
 
-      {/* Stats row */}
-      <div style={{
-        display: "flex", gap: 16, marginTop: 12,
-        padding: "10px 0", borderTop: "1px solid rgba(255,255,255,0.05)",
-        borderBottom: mode === "props" ? "1px solid rgba(255,255,255,0.05)" : "none",
-      }}>
-        {[
-          { label: "7D HIT%", val: `${Math.round(player.hitRate7 * 100)}%` },
-          { label: "14D HIT%", val: `${Math.round(player.hitRate14 * 100)}%` },
-          { label: "30D HIT%", val: `${Math.round(player.hitRate30 * 100)}%` },
-          { label: "LINEUP", val: lineupLabel },
-          { label: "PARK", val: player.parkFactor >= 1.1 ? "Hitter +" : player.parkFactor >= 1.0 ? "Neutral" : "Pitcher" },
-        ].map(s => (
-          <div key={s.label} style={{ textAlign: "center", minWidth: 52 }}>
-            <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono', monospace", letterSpacing: 0.5 }}>
-              {s.label}
-            </div>
-            <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 600, marginTop: 3 }}>
-              {s.val}
-            </div>
-          </div>
-        ))}
-        <div style={{ marginLeft: "auto" }}>
-          <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'DM Mono', monospace" }}>LAST 7G</div>
-          <MiniStreak games={player.lastGames} />
-        </div>
-      </div>
-
-      {/* Props section (props mode only) */}
-      {mode === "props" && (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 6, fontFamily: "'DM Mono', monospace" }}>
-            LIVE ODDS · RECOMMENDED PROPS
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {player.props.map((p, i) => (
-              <OddsChip key={i} prop={p} isRec={p.recommended} />
-            ))}
-          </div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
-            ★ = 57 Killer recommended · Avg hits/game: <span style={{ color: "var(--text-secondary)" }}>{player.avgHits}</span>
-          </div>
+      {/* Factor pills */}
+      {pick.factors?.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}>
+          {pick.factors.map(f => <FactorPill key={f} factorKey={f} />)}
         </div>
       )}
+
+      {/* Expanded stats row */}
+      {expanded && (
+        <div style={{
+          marginTop: 14,
+          paddingTop: 12,
+          borderTop: "1px solid rgba(255,255,255,0.07)",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
+          gap: 8,
+        }}>
+          {[
+            { label: "L7 AVG",  value: pick.l7pa  >= 3 ? (pick.l7hits  / pick.l7pa ).toFixed(3).replace("0.", ".") : "—" },
+            { label: "L14 AVG", value: pick.l14pa >= 3 ? (pick.l14hits / pick.l14pa).toFixed(3).replace("0.", ".") : "—" },
+            { label: "L30 AVG", value: pick.l30pa >= 3 ? (pick.l30hits / pick.l30pa).toFixed(3).replace("0.", ".") : "—" },
+            { label: "STREAK",  value: pick.activeStreak >= 1 ? `${pick.activeStreak}G` : "—" },
+            { label: "PARK",    value: pick.parkFactor != null ? pick.parkFactor : "—" },
+            { label: "K%",      value: pick.pitcherKPct != null ? `${(pick.pitcherKPct*100).toFixed(0)}%` : "—" },
+            { label: "VS LHP",  value: pick.platoon ?? "—" },
+            { label: "PITCHER", value: pick.pitcherName ?? "—", wide: true },
+          ].map(s => (
+            <div key={s.label} style={{ gridColumn: s.wide ? "span 2" : "span 1" }}>
+              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.07em", marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#cbd5e1" }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Expand chevron */}
+      <div style={{ textAlign: "center", marginTop: 8 }}>
+        <span style={{ fontSize: 11, color: "#334155", userSelect: "none" }}>
+          {expanded ? "▲" : "▼"}
+        </span>
+      </div>
     </div>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-export default function FiftySevenKiller() {
-  const [mode, setMode] = useState("bts"); // "bts" | "props"
-  const [selected, setSelected] = useState([]);
-  const [minScore, setMinScore] = useState(82);
-  const [today] = useState(new Date().toLocaleDateString("en-US", {
-    weekday: "long", month: "long", day: "numeric", year: "numeric"
-  }));
-
-  const filtered = MOCK_PLAYERS.filter(p => p.score >= minScore);
-
-  const handleSelect = (id) => {
-    setSelected(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) :
-      prev.length < 2 ? [...prev, id] : [prev[1], id]
-    );
-  };
-
-  const topScore = filtered[0]?.score || 0;
-
+// ─── Skeleton loader ─────────────────────────────────────────────────────────
+function SkeletonCard() {
   return (
     <div style={{
-      minHeight: "100vh",
-      background: "var(--bg-primary, #0d1117)",
-      color: "var(--text-primary, #f0f6fc)",
-      fontFamily: "'Inter', system-ui, sans-serif",
-      paddingBottom: 80,
+      background: "rgba(255,255,255,0.025)",
+      border: "1px solid rgba(255,255,255,0.05)",
+      borderLeft: "3px solid rgba(255,255,255,0.08)",
+      borderRadius: 10, padding: "14px 16px",
     }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(255,255,255,0.06)" }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ height: 14, width: "55%", borderRadius: 4, background: "rgba(255,255,255,0.07)", marginBottom: 6 }} />
+          <div style={{ height: 11, width: "35%", borderRadius: 4, background: "rgba(255,255,255,0.04)" }} />
+        </div>
+        <div style={{ width: 36, height: 28, borderRadius: 4, background: "rgba(255,255,255,0.06)" }} />
+      </div>
+      <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.06)" }} />
+      <div style={{ display: "flex", gap: 5, marginTop: 10 }}>
+        {[80, 100, 70].map(w => (
+          <div key={w} style={{ height: 22, width: w, borderRadius: 20, background: "rgba(255,255,255,0.05)" }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
+export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
+  const [picks, setPicks]         = useState([]);
+  const [status, setStatus]       = useState("idle"); // idle | loading | done | error
+  const [progress, setProgress]   = useState({ scored: 0, total: 0 });
+  const [errorMsg, setErrorMsg]   = useState("");
+  const [filterTier, setFilterTier] = useState("all");
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  });
+  const abortRef = useRef(false);
+
+  const runAnalysis = useCallback(async () => {
+    abortRef.current = false;
+    setStatus("loading");
+    setPicks([]);
+    setProgress({ scored: 0, total: 0 });
+    setErrorMsg("");
+
+    try {
+      // fetchGames returns { games, date } — same shape as TodaysPicks uses
+      const { games } = await fetchGames(selectedDate);
+      const activeGames = (games || []).filter(g => !g.isPostponed && !g.isCancelled && !g.isSuspended);
+
+      if (!activeGames?.length) {
+        setStatus("done");
+        return;
+      }
+
+      // Gather all batters from lineups
+      const candidates = [];
+      for (const game of activeGames) {
+        if (abortRef.current) break;
+
+        // fetchConfirmedLineups is the correct function — returns { home: {status, players[]}, away: {status, players[]} }
+        const lineupData = await fetchConfirmedLineups(game.gamePk).catch(() => null);
+
+        for (const side of ["home", "away"]) {
+          // Key is .players (not .batters) — Bug 2 fix
+          const lineup    = lineupData?.[side]?.players ?? [];
+          const confirmed = lineupData?.[side]?.status === "confirmed";
+          const battingTeam = game[side];
+          const opponent    = game[side === "home" ? "away" : "home"];
+
+          // Pitcher comes from the game object (probablePitcher), not lineupData
+          const pitcher = opponent?.pitcher ?? null;
+
+          for (let i = 0; i < lineup.length; i++) {
+            candidates.push({
+              batter: lineup[i],
+              lineupPos: lineup[i].order ?? i + 1,
+              lineupConfirmed: confirmed,
+              battingTeam,
+              opponent,
+              pitcher,
+              game,
+              isHome: side === "home",
+              // Bug 3 fix: game.venue is the name string — matches PARK_FACTORS keys
+              venue: game.venue ?? "",
+            });
+          }
+        }
+      }
+
+      setProgress({ scored: 0, total: candidates.length });
+
+      const BATCH = 12;
+      const results = [];
+
+      for (let i = 0; i < candidates.length; i += BATCH) {
+        if (abortRef.current) break;
+        const batch = candidates.slice(i, i + BATCH);
+
+        const batchResults = await Promise.allSettled(
+          batch.map(async (c) => {
+            const { batter, lineupPos, lineupConfirmed, battingTeam, opponent, pitcher, game, isHome, venue } = c;
+
+            // Fetch gamelog
+            const logs = await fetchGameLog(batter.id, new Date().getFullYear()).catch(() => []);
+            const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
+
+            // Rolling splits — gamelog uses .hits and .atBats fields
+            const sliceHits = (n) => {
+              let h = 0, pa = 0;
+              for (const g of sorted.slice(0, n)) {
+                h  += parseInt(g.hits)   || 0;
+                pa += parseInt(g.atBats) || 0;
+              }
+              return { hits: h, pa };
+            };
+            const s7  = sliceHits(7);
+            const s14 = sliceHits(14);
+            const s30 = sliceHits(30);
+
+            // Active streak
+            let activeStreak = 0;
+            for (const g of sorted) {
+              if ((parseInt(g.hits) || 0) > 0) activeStreak++;
+              else break;
+            }
+
+            // Prev streak (bounce-back signal)
+            let prevStreak = 0;
+            if ((parseInt(sorted[0]?.hits) || 0) === 0) {
+              for (const g of sorted.slice(1)) {
+                if ((parseInt(g.hits) || 0) > 0) prevStreak++;
+                else break;
+              }
+            }
+
+            // Season avg
+            const seasonHits = sorted.reduce((a, g) => a + (parseInt(g.hits)   || 0), 0);
+            const seasonAB   = sorted.reduce((a, g) => a + (parseInt(g.atBats) || 0), 0);
+            const seasonAvg  = seasonAB >= 10 ? seasonHits / seasonAB : 0.250;
+
+            // Bug 3 fix: PARK_FACTORS keyed by venue name string (not numeric ID)
+            const parkFactor = PARK_FACTORS[venue]?.factor ?? 100;
+
+            // Pitcher K% — from fetchPitcherStats (now has kPct derivation layer)
+            // Bug 6 fix: pitcherName from game object, not pStats (which has no .name)
+            let pitcherKPct = null;
+            const pitcherName = pitcher?.name ?? null;
+            if (pitcher?.id) {
+              const pStats = await fetchPitcherStats(pitcher.id).catch(() => null);
+              pitcherKPct  = pStats?.kPct ?? null;
+            }
+
+            const { confidence, tier, factors } = compute57KillerScore({
+              lineupPos,
+              l7hits: s7.hits,   l7pa: s7.pa,
+              l14hits: s14.hits, l14pa: s14.pa,
+              l30hits: s30.hits, l30pa: s30.pa,
+              parkFactor,
+              pitcherKPct,
+              isHome,
+              activeStreak,
+              prevStreak,
+              seasonAvg,
+              lineupConfirmed,
+            });
+
+            return {
+              id: `${batter.id}-${game.gamePk}`,
+              name: batter.fullName ?? batter.name ?? "Unknown",
+              team: battingTeam?.team ?? battingTeam?.abbr ?? "",
+              opponent: opponent?.abbr ?? "",
+              venue,
+              lineupPos,
+              lineupConfirmed,
+              isHome,
+              confidence,
+              tier,
+              factors,
+              activeStreak,
+              prevStreak,
+              l7hits: s7.hits,   l7pa: s7.pa,
+              l14hits: s14.hits, l14pa: s14.pa,
+              l30hits: s30.hits, l30pa: s30.pa,
+              parkFactor,
+              pitcherKPct,
+              pitcherName,
+              platoon: null,
+            };
+          })
+        );
+
+        for (const r of batchResults) {
+          if (r.status === "fulfilled" && r.value) results.push(r.value);
+        }
+
+        setProgress({ scored: Math.min(i + BATCH, candidates.length), total: candidates.length });
+
+        // Streaming update every 2 batches
+        if ((i / BATCH) % 2 === 1 || i + BATCH >= candidates.length) {
+          const interim = [...results]
+            .filter(p => p.confidence >= 60)
+            .sort((a, b) => b.confidence - a.confidence)
+            .slice(0, 10);
+          setPicks(interim);
+        }
+      }
+
+      // Final sort — top 10 ≥ 60 confidence
+      const final = [...results]
+        .filter(p => p.confidence >= 60)
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 10);
+
+      setPicks(final);
+      setStatus("done");
+    } catch (err) {
+      console.error("[57Killer]", err);
+      setErrorMsg(err.message ?? "Unknown error");
+      setStatus("error");
+    }
+  }, [selectedDate]);
+
+  // ─── Filtered view ─────────────────────────────────────────────────────────
+  const visiblePicks = filterTier === "all"
+    ? picks
+    : picks.filter(p => p.tier?.label === filterTier);
+
+  const isLoading = status === "loading";
+  const isDone    = status === "done";
+  const hasResults = picks.length > 0;
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div style={{
+      color: "#f1f5f9",
+      fontFamily: "'Inter', system-ui, sans-serif",
+      padding: "0 0 60px",
+    }}>
+
       {/* ── Header ── */}
       <div style={{
-        padding: "28px 20px 0",
-        maxWidth: 860, margin: "0 auto",
+        background: "rgba(255,255,255,0.03)",
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        padding: "20px 24px 16px",
       }}>
-        {/* Title block */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <div style={{
-                background: "linear-gradient(135deg, #f59e0b, #fbbf24)",
-                borderRadius: 8, padding: "4px 10px",
-                fontSize: 11, fontWeight: 800, color: "#000",
-                fontFamily: "'DM Mono', monospace", letterSpacing: 1.5,
-              }}>57 KILLER</div>
-              <div style={{
-                fontSize: 10, color: "#10b981",
-                fontFamily: "'DM Mono', monospace",
-                background: "rgba(16,185,129,0.1)",
-                border: "1px solid rgba(16,185,129,0.2)",
-                padding: "2px 8px", borderRadius: 4,
-              }}>BETA</div>
-            </div>
-            <h1 style={{
-              margin: 0, fontSize: "clamp(22px, 4vw, 30px)",
-              fontWeight: 800, color: "var(--text-primary)",
-              letterSpacing: -0.5,
-            }}>
-              Advanced Hit Probability Engine
-            </h1>
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--text-muted)", maxWidth: 500 }}>
-              Multi-factor composite model — lineup position, rolling hit rates, PA probability, park factors & pitcher profile. Min threshold: {minScore}%.
-            </p>
-          </div>
-
-          {/* Top confidence callout */}
-          <div style={{
-            background: "linear-gradient(135deg, rgba(251,191,36,0.1), rgba(251,191,36,0.05))",
-            border: "1px solid rgba(251,191,36,0.25)",
-            borderRadius: 12, padding: "12px 16px", textAlign: "center", minWidth: 110,
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+          <span style={{
+            fontSize: 22, fontWeight: 900, letterSpacing: "-0.03em",
+            background: "linear-gradient(135deg, #f59e0b, #fbbf24)",
+            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
           }}>
-            <div style={{ fontSize: 10, color: "#fbbf24", fontFamily: "'DM Mono', monospace", marginBottom: 2 }}>
-              TOP SCORE
-            </div>
-            <div style={{ fontSize: 32, fontWeight: 800, color: "#fbbf24", fontFamily: "'DM Mono', monospace", lineHeight: 1 }}>
-              {topScore}
-            </div>
-            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>/ 100 today</div>
-          </div>
-        </div>
-
-        {/* Date + algo badge */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 10,
-          marginTop: 16, paddingBottom: 16,
-          borderBottom: "1px solid rgba(255,255,255,0.07)",
-          flexWrap: "wrap",
-        }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{today}</span>
-          <span style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
-          {Object.entries({ "Lineup Pos": "30%", "Rolling HR": "25%", "PA Prob": "20%", "Park": "10%", "K%": "10%", "Home": "5%" }).map(([k, v]) => (
-            <span key={k} style={{
-              fontSize: 10, color: "var(--text-muted)",
-              fontFamily: "'DM Mono', monospace",
-              background: "rgba(255,255,255,0.05)",
-              padding: "2px 6px", borderRadius: 4,
-            }}>{k}: {v}</span>
-          ))}
-        </div>
-
-        {/* Mode toggle + threshold */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          gap: 12, marginTop: 16, marginBottom: 20, flexWrap: "wrap",
-        }}>
-          {/* Mode toggle */}
-          <div style={{
-            display: "flex", gap: 2, padding: 3,
-            background: "rgba(255,255,255,0.05)",
-            borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)",
+            57 Killer
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: "0.12em",
+            color: "#f59e0b", border: "1px solid #f59e0b55",
+            padding: "2px 6px", borderRadius: 4, background: "rgba(245,158,11,0.1)",
           }}>
-            {[
-              { key: "bts", label: "⚾ BTS Mode" },
-              { key: "props", label: "📊 Props / DFS" },
-            ].map(({ key, label }) => (
-              <button key={key} onClick={() => setMode(key)} style={{
-                padding: "8px 18px", borderRadius: 8,
-                background: mode === key
-                  ? key === "bts"
-                    ? "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(16,185,129,0.15))"
-                    : "linear-gradient(135deg, rgba(96,165,250,0.25), rgba(96,165,250,0.15))"
-                  : "transparent",
-                border: mode === key
-                  ? `1px solid ${key === "bts" ? "rgba(16,185,129,0.4)" : "rgba(96,165,250,0.4)"}`
-                  : "1px solid transparent",
-                color: mode === key
-                  ? key === "bts" ? "#10b981" : "#60a5fa"
-                  : "var(--text-muted)",
-                fontSize: 13, fontWeight: 600, cursor: "pointer",
-                transition: "all 0.2s",
-              }}>
-                {label}
-              </button>
-            ))}
-          </div>
+            BEAT THE STREAK
+          </span>
+        </div>
+        <p style={{ fontSize: 13, color: "#475569", margin: 0, lineHeight: 1.5 }}>
+          Composite analysis targeting elite contact opportunities. Top 10 plays, ranked by confidence.
+        </p>
+      </div>
 
-          {/* Min threshold slider */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'DM Mono', monospace" }}>
-              MIN CONF:
+      <div style={{ padding: "16px 16px 0" }}>
+
+        {/* ── Controls ── */}
+        <div style={{
+          display: "flex", gap: 10, flexWrap: "wrap",
+          alignItems: "center", marginBottom: 20,
+        }}>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            disabled={isLoading}
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 8, color: "#f1f5f9",
+              padding: "8px 12px", fontSize: 13,
+              cursor: isLoading ? "not-allowed" : "auto",
+            }}
+          />
+
+          <button
+            onClick={isLoading ? () => { abortRef.current = true; } : runAnalysis}
+            style={{
+              background: isLoading
+                ? "rgba(239,68,68,0.15)"
+                : "linear-gradient(135deg, #f59e0b, #d97706)",
+              border: isLoading ? "1px solid rgba(239,68,68,0.4)" : "none",
+              borderRadius: 8, padding: "8px 18px",
+              color: isLoading ? "#ef4444" : "#0a0f1e",
+              fontSize: 13, fontWeight: 700, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+              transition: "opacity 0.2s",
+            }}
+          >
+            <span className="material-icons" style={{ fontSize: 16 }}>
+              {isLoading ? "stop" : "bolt"}
             </span>
-            {[80, 82, 85, 88, 90].map(v => (
-              <button key={v} onClick={() => setMinScore(v)} style={{
-                padding: "4px 8px", borderRadius: 6, fontSize: 11,
-                background: minScore === v ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.04)",
-                border: `1px solid ${minScore === v ? "rgba(251,191,36,0.4)" : "rgba(255,255,255,0.08)"}`,
-                color: minScore === v ? "#fbbf24" : "var(--text-muted)",
-                cursor: "pointer", fontFamily: "'DM Mono', monospace",
-              }}>{v}%</button>
-            ))}
-          </div>
+            {isLoading ? "Stop" : "Run Analysis"}
+          </button>
+
+          {/* Tier filter chips */}
+          {hasResults && (
+            <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap" }}>
+              {["all", ...TIERS.map(t => t.label)].map(label => {
+                const active = filterTier === label;
+                const tier   = TIERS.find(t => t.label === label);
+                return (
+                  <button
+                    key={label}
+                    onClick={() => setFilterTier(label)}
+                    style={{
+                      padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                      cursor: "pointer", transition: "all 0.15s",
+                      background: active ? (tier?.bg ?? "rgba(255,255,255,0.1)") : "transparent",
+                      border: `1px solid ${active ? (tier?.border ?? "rgba(255,255,255,0.3)") : "rgba(255,255,255,0.1)"}`,
+                      color: active ? (tier?.color ?? "#f1f5f9") : "#64748b",
+                    }}
+                  >
+                    {label === "all" ? "ALL" : label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Selection tray */}
-        {selected.length > 0 && (
-          <div style={{
-            background: "linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.06))",
-            border: "1px solid rgba(16,185,129,0.25)",
-            borderRadius: 12, padding: "12px 16px",
-            marginBottom: 16, display: "flex", alignItems: "center",
-            justifyContent: "space-between", flexWrap: "wrap", gap: 8,
-          }}>
-            <div style={{ fontSize: 13, color: "#10b981", fontWeight: 600 }}>
-              {selected.length === 1 ? "1 pick selected" : "2 picks selected (double-down)"}
-              {" · "}
-              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
-                {MOCK_PLAYERS.filter(p => selected.includes(p.id)).map(p => p.name).join(" & ")}
+        {/* ── Progress bar ── */}
+        {isLoading && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between",
+              fontSize: 12, color: "#475569", marginBottom: 5,
+            }}>
+              <span>Analyzing batters…</span>
+              <span>
+                {progress.total > 0
+                  ? `${progress.scored} / ${progress.total}`
+                  : "Fetching lineups…"}
               </span>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button style={{
-                padding: "6px 14px", borderRadius: 8, fontSize: 12,
-                background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.4)",
-                color: "#10b981", cursor: "pointer", fontWeight: 600,
-              }}>
-                Add to BTS Tracker
-              </button>
-              <button onClick={() => setSelected([])} style={{
-                padding: "6px 12px", borderRadius: 8, fontSize: 12,
-                background: "transparent", border: "1px solid rgba(255,255,255,0.1)",
-                color: "var(--text-muted)", cursor: "pointer",
-              }}>Clear</button>
-            </div>
-          </div>
-        )}
-
-        {/* Props mode info banner */}
-        {mode === "props" && (
-          <div style={{
-            background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.2)",
-            borderRadius: 10, padding: "10px 14px", marginBottom: 16,
-            fontSize: 12, color: "var(--text-muted)",
-          }}>
-            📊 <strong style={{ color: "#60a5fa" }}>Props / DFS Mode</strong> — Live odds shown where available.
-            ★ Starred props are 57 Killer's highest-confidence line for each player.
-            Odds sourced via connected sportsbook feed. Always verify before placing.
-          </div>
-        )}
-
-        {/* BTS mode info banner */}
-        {mode === "bts" && (
-          <div style={{
-            background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.15)",
-            borderRadius: 10, padding: "10px 14px", marginBottom: 16,
-            fontSize: 12, color: "var(--text-muted)",
-          }}>
-            ⚾ <strong style={{ color: "#fbbf24" }}>BTS Mode</strong> — Select up to 2 players for streak tracking.
-            57 Killer prioritizes lineup position (1-2 hole) and high contact profiles. Only players scoring {minScore}%+ are shown.
-          </div>
-        )}
-
-        {/* Player count */}
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-          Showing <strong style={{ color: "var(--text-primary)" }}>{filtered.length}</strong> players above {minScore}% confidence today
-          {mode === "bts" && (
-            <span style={{ marginLeft: 8, color: "rgba(255,255,255,0.3)" }}>· Click to select up to 2 picks</span>
-          )}
-        </div>
-
-        {/* Player cards */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {filtered.map((player, i) => (
-            <PlayerCard57
-              key={player.id}
-              player={player}
-              rank={i + 1}
-              mode={mode}
-              selected={selected.includes(player.id)}
-              onSelect={handleSelect}
-            />
-          ))}
-          {filtered.length === 0 && (
             <div style={{
-              textAlign: "center", padding: "60px 20px",
-              color: "var(--text-muted)", fontSize: 14,
+              height: 3, borderRadius: 2,
+              background: "rgba(255,255,255,0.07)", overflow: "hidden",
             }}>
-              No players meet the {minScore}% confidence threshold today.<br />
-              <button onClick={() => setMinScore(80)} style={{
-                marginTop: 12, padding: "8px 16px", borderRadius: 8,
-                background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
-                color: "#fbbf24", cursor: "pointer", fontSize: 12,
-              }}>Lower to 80%</button>
+              <div style={{
+                height: "100%",
+                width: progress.total > 0 ? `${(progress.scored / progress.total) * 100}%` : "0%",
+                background: "linear-gradient(90deg, #f59e0b88, #f59e0b)",
+                borderRadius: 2,
+                transition: "width 0.4s ease",
+              }} />
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Footer disclaimer */}
-        <div style={{
-          marginTop: 32, padding: "16px", borderRadius: 10,
-          background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
-          fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6,
-        }}>
-          <strong style={{ color: "var(--text-secondary)" }}>57 Killer Algorithm</strong> — Composite scoring: Lineup Position (30%) · Rolling Hit Rate 7/14/30d (25%) · PA Probability (20%) · Park Factor (10%) · Pitcher K% Inverse (10%) · Home/Road Risk (5%). 
-          Minimum confidence threshold {minScore}%. For entertainment and informational purposes. 
-          Past performance does not guarantee future results. Props odds are estimates — verify with your sportsbook.
-        </div>
+        {/* ── Error ── */}
+        {status === "error" && (
+          <div style={{
+            background: "rgba(239,68,68,0.1)",
+            border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: 8, padding: "12px 16px",
+            color: "#fca5a5", fontSize: 13, marginBottom: 16,
+          }}>
+            <span className="material-icons" style={{ fontSize: 16, verticalAlign: "middle", marginRight: 6 }}>error_outline</span>
+            {errorMsg || "Failed to load data. Check your connection and try again."}
+          </div>
+        )}
+
+        {/* ── Idle CTA ── */}
+        {status === "idle" && (
+          <div style={{
+            textAlign: "center", padding: "48px 16px",
+            color: "#334155",
+          }}>
+            <span className="material-icons" style={{ fontSize: 48, display: "block", marginBottom: 12, color: "#1e3050" }}>
+              bolt
+            </span>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: "#475569" }}>
+              Ready to run
+            </div>
+            <div style={{ fontSize: 13 }}>
+              Select a date and tap <strong style={{ color: "#f59e0b" }}>Run Analysis</strong> to surface today's top plays.
+            </div>
+          </div>
+        )}
+
+        {/* ── Skeleton while loading with no results yet ── */}
+        {isLoading && !hasResults && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[...Array(5)].map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+        )}
+
+        {/* ── Results ── */}
+        {hasResults && (
+          <>
+            {/* Summary bar */}
+            <div style={{
+              display: "flex", gap: 16, flexWrap: "wrap",
+              marginBottom: 14, padding: "10px 14px",
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.06)",
+              borderRadius: 8, fontSize: 12, color: "#64748b",
+            }}>
+              {TIERS.map(t => {
+                const n = picks.filter(p => p.tier?.label === t.label).length;
+                if (!n) return null;
+                return (
+                  <span key={t.label}>
+                    <span style={{ color: t.color, fontWeight: 700 }}>{n}</span> {t.label}
+                  </span>
+                );
+              })}
+              <span style={{ marginLeft: "auto" }}>
+                {isLoading ? `${progress.scored} scored…` : `${picks.length} plays found`}
+              </span>
+            </div>
+
+            {/* Cards */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {visiblePicks.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "32px 0", color: "#475569", fontSize: 14 }}>
+                  No plays match the selected tier filter.
+                </div>
+              ) : (
+                visiblePicks.map((pick, i) => (
+                  <PlayerCard key={pick.id} pick={pick} rank={i + 1} />
+                ))
+              )}
+            </div>
+
+            {/* Disclaimer */}
+            {isDone && (
+              <div style={{
+                marginTop: 20, padding: "10px 14px",
+                background: "rgba(245,158,11,0.06)",
+                border: "1px solid rgba(245,158,11,0.15)",
+                borderRadius: 8, fontSize: 11, color: "#78716c", lineHeight: 1.6,
+              }}>
+                <span className="material-icons" style={{ fontSize: 13, verticalAlign: "middle", marginRight: 4, color: "#d97706" }}>info</span>
+                Confidence scores reflect a proprietary composite model. They do not guarantee results.
+                Always verify lineup confirmation on MLB.com before submitting picks.
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
