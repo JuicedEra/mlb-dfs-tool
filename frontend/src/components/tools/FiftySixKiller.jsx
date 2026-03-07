@@ -25,7 +25,9 @@ import {
   fetchPitcherStats,
   fetchRoster,
   PARK_FACTORS,
+  headshot,
 } from "../../utils/mlbApi";
+import PlayerPanel from "../shared/PlayerPanel";
 
 // ─── Minimum confidence to surface a result ──────────────────────────────────
 // 40 = show any player with reasonable form data, even pre-lineup
@@ -186,13 +188,15 @@ function FactorPill({ factorKey }) {
   );
 }
 
-function PlayerCard({ pick, rank }) {
+function PlayerCard({ pick, rank, onOpen }) {
   const tier = pick.tier ?? getTier(pick.confidence);
+  const [photoErr, setPhotoErr] = useState(false);
   const [expanded, setExpanded] = useState(false);
+
+  const batterId = pick.id?.split("-")[0];
 
   return (
     <div
-      onClick={() => setExpanded(e => !e)}
       style={{
         background: "var(--surface, #fff)",
         border: `1px solid ${expanded ? tier.border : "var(--border, #D8DEED)"}`,
@@ -221,10 +225,54 @@ function PlayerCard({ pick, rank }) {
           {rank}
         </div>
 
+        {/* Headshot */}
+        <div
+          onClick={e => { e.stopPropagation(); onOpen(pick); }}
+          title="View player card"
+          style={{
+            width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+            overflow: "hidden", border: `2px solid ${tier.color}55`,
+            background: "var(--surface-2, #F5F7FB)",
+            cursor: "pointer", transition: "border-color 0.2s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = tier.color; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = `${tier.color}55`; }}
+        >
+          {!photoErr && batterId ? (
+            <img
+              src={headshot(batterId)}
+              alt={pick.name}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              onError={() => setPhotoErr(true)}
+            />
+          ) : (
+            <div style={{
+              width: "100%", height: "100%",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, fontWeight: 700, color: tier.color,
+              background: `${tier.color}18`,
+            }}>
+              {pick.name?.split(" ").map(w => w[0]).slice(0, 2).join("") || "?"}
+            </div>
+          )}
+        </div>
+
         {/* Player info */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{ flex: 1, minWidth: 0 }}
+          onClick={() => setExpanded(e => !e)}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary, #0C1A35)", letterSpacing: "-0.01em" }}>
+            <span
+              onClick={e => { e.stopPropagation(); onOpen(pick); }}
+              style={{
+                fontSize: 15, fontWeight: 700, color: "var(--text-primary, #0C1A35)",
+                letterSpacing: "-0.01em", cursor: "pointer",
+                textDecoration: "none",
+              }}
+              onMouseEnter={e => { e.target.style.textDecoration = "underline"; }}
+              onMouseLeave={e => { e.target.style.textDecoration = "none"; }}
+            >
               {pick.name}
             </span>
             <TierBadge tier={tier} />
@@ -238,7 +286,10 @@ function PlayerCard({ pick, rank }) {
         </div>
 
         {/* Confidence */}
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div
+          style={{ textAlign: "right", flexShrink: 0 }}
+          onClick={() => setExpanded(e => !e)}
+        >
           <div style={{ fontSize: 22, fontWeight: 800, color: tier.color, lineHeight: 1 }}>
             {pick.confidence}
           </div>
@@ -247,11 +298,16 @@ function PlayerCard({ pick, rank }) {
       </div>
 
       {/* Confidence bar */}
-      <ConfidenceBar value={pick.confidence} tier={tier} />
+      <div onClick={() => setExpanded(e => !e)}>
+        <ConfidenceBar value={pick.confidence} tier={tier} />
+      </div>
 
       {/* Factor pills */}
       {pick.factors?.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}>
+        <div
+          style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}
+          onClick={() => setExpanded(e => !e)}
+        >
           {pick.factors.map(f => <FactorPill key={f} factorKey={f} />)}
         </div>
       )}
@@ -281,11 +337,26 @@ function PlayerCard({ pick, rank }) {
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary, #445068)" }}>{s.value}</div>
             </div>
           ))}
+          {/* Full card CTA */}
+          <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
+            <button
+              onClick={e => { e.stopPropagation(); onOpen(pick); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: `${tier.color}18`, border: `1px solid ${tier.color}55`,
+                borderRadius: 6, padding: "5px 12px",
+                color: tier.color, fontSize: 11, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              <span className="material-icons" style={{ fontSize: 14 }}>person</span>
+              Full Player Card
+            </button>
+          </div>
         </div>
       )}
 
       {/* Expand chevron */}
-      <div style={{ textAlign: "center", marginTop: 8 }}>
+      <div style={{ textAlign: "center", marginTop: 8 }} onClick={() => setExpanded(e => !e)}>
         <span style={{ fontSize: 11, color: "var(--text-muted, #8494B2)", userSelect: "none" }}>
           {expanded ? "▲" : "▼"}
         </span>
@@ -328,11 +399,25 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
   const [progress, setProgress]     = useState({ scored: 0, total: 0 });
   const [errorMsg, setErrorMsg]     = useState("");
   const [filterTier, setFilterTier] = useState("all");
+  const [panelPick, setPanelPick]   = useState(null); // PlayerPanel target
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     return d.toISOString().slice(0, 10);
   });
   const abortRef = useRef(false);
+
+  // ─── Open PlayerPanel — shape 56K pick into the format PlayerPanel expects ──
+  const openPanel = useCallback((pick) => {
+    const batterId = parseInt(pick.id?.split("-")[0], 10);
+    setPanelPick({
+      batter: { id: batterId, name: pick.name, batSide: "?" },
+      pitcher: pick.pitcherId
+        ? { id: pick.pitcherId, name: pick.pitcherName ?? "Unknown", hand: "R" }
+        : null,
+      game: { gamePk: pick.gamePk, venue: pick.venue },
+      scoreData: null, // 56K uses its own confidence score, not IQ scoreData
+    });
+  }, []);
 
   // ─── Scoring pipeline ──────────────────────────────────────────────────────
   const runAnalysis = useCallback(async () => {
@@ -537,6 +622,8 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
               team:            battingTeam?.team ?? battingTeam?.abbr ?? "",
               opponent:        opponent?.abbr ?? "",
               venue,
+              gamePk:          game.gamePk,
+              pitcherId:       pitcherId ?? null,
               lineupPos,
               lineupConfirmed,
               isHome,
@@ -837,7 +924,7 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
                 </div>
               ) : (
                 visiblePicks.map((pick, i) => (
-                  <PlayerCard key={pick.id} pick={pick} rank={i + 1} />
+                  <PlayerCard key={pick.id} pick={pick} rank={i + 1} onOpen={openPanel} />
                 ))
               )}
             </div>
@@ -858,6 +945,16 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
           </>
         )}
       </div>
+
+      {/* ── Player Info Panel ── */}
+      {panelPick && (
+        <PlayerPanel
+          pick={panelPick}
+          onClose={() => setPanelPick(null)}
+          showBvP={false}
+          liveStats={null}
+        />
+      )}
     </div>
   );
 }
