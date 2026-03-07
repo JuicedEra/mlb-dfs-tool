@@ -310,7 +310,8 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
     const d = new Date();
     return d.toISOString().slice(0, 10);
   });
-  const abortRef = useRef(false);
+  const abortRef    = useRef(false);
+  const dateInputRef = useRef(null);
 
   // ─── Scoring pipeline ──────────────────────────────────────────────────────
   const runAnalysis = useCallback(async () => {
@@ -555,33 +556,45 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
           display: "flex", gap: 10, flexWrap: "wrap",
           alignItems: "center", marginBottom: 20,
         }}>
-          {/* Date selector — label triggers the hidden native input; shows only our styled display */}
-          <label style={{ position: "relative", display: "inline-flex", alignItems: "center", cursor: isLoading ? "not-allowed" : "pointer" }}>
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8,
-              background: "var(--surface, #fff)",
-              border: `1px solid ${selectedDate ? "#f59e0b" : "var(--border, #D8DEED)"}`,
-              borderRadius: 8, padding: "8px 14px",
-              color: "var(--text-primary, #0C1A35)",
-              fontSize: 13, fontWeight: 700,
-              userSelect: "none",
-              opacity: isLoading ? 0.5 : 1,
-              boxShadow: "var(--shadow-xs)",
-            }}>
+          {/* Date selector — styled button opens native picker via ref */}
+          <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => !isLoading && dateInputRef.current?.showPicker?.()}
+              disabled={isLoading}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                background: "var(--surface, #fff)",
+                border: `1px solid ${selectedDate ? "#f59e0b" : "var(--border, #D8DEED)"}`,
+                borderRadius: 8, padding: "8px 14px",
+                color: "var(--text-primary, #0C1A35)",
+                fontSize: 13, fontWeight: 700,
+                cursor: isLoading ? "not-allowed" : "pointer",
+                opacity: isLoading ? 0.5 : 1,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              }}
+            >
               <span className="material-icons" style={{ fontSize: 16, color: "#d97706" }}>calendar_today</span>
               {selectedDate
                 ? new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
                 : "Select date"}
               <span className="material-icons" style={{ fontSize: 14, color: "var(--text-muted)", marginLeft: 2 }}>arrow_drop_down</span>
-            </div>
+            </button>
+            {/* Hidden native input — positioned under button so fallback click also works */}
             <input
+              ref={dateInputRef}
               type="date"
               value={selectedDate}
               onChange={e => setSelectedDate(e.target.value)}
               disabled={isLoading}
-              style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", top: 0, left: 0, cursor: "pointer" }}
+              style={{
+                position: "absolute", inset: 0,
+                opacity: 0, cursor: "pointer",
+                width: "100%", height: "100%",
+                zIndex: isLoading ? -1 : 0,
+              }}
             />
-          </label>
+          </div>
 
           <button
             onClick={isLoading ? () => { abortRef.current = true; } : runAnalysis}
