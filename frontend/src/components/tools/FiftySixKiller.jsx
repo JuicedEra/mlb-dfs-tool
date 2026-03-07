@@ -1,5 +1,5 @@
-// src/components/tools/FiftySevenKiller.jsx
-// DiamondIQ PRO — 57 Killer Tool v2
+// src/components/tools/FiftySixKiller.jsx
+// DiamondIQ PRO — 56 Killer Tool v2
 // Composite score: lineup pos, rolling hit rate, PA probability, park factor, pitcher K%, home/road risk
 // Formula hidden — confidence bars + tier labels + factor pills only
 
@@ -36,11 +36,11 @@ const FACTOR_DEFS = {
   bounceBack:   { label: "↩️ Bounce-Back",    activeColor: "#f472b6" },
 };
 
-// ─── compute57KillerScore ────────────────────────────────────────────────────
+// ─── compute56KillerScore ────────────────────────────────────────────────────
 // Weights: lineupPos 30%, rollingHitRate 25%, paProbability 20%,
 //          parkFactor 10%, pitcherKInverse 10%, homeRoadRisk 5%
 // Returns { confidence, tier, factors[], breakdown_hidden }
-export function compute57KillerScore({
+export function compute56KillerScore({
   lineupPos,          // 1-9, null if unknown
   l7hits, l7pa,       // last 7 games
   l14hits, l14pa,
@@ -245,7 +245,7 @@ function PlayerCard({ pick, rank }) {
           gap: 8,
         }}>
           {[
-            { label: "L7 AVG",   tip: "Batting average over last 7 games — highest weight in 57K score",      value: pick.l7pa  >= 3 ? (pick.l7hits  / pick.l7pa ).toFixed(3).replace("0.", ".") : "—" },
+            { label: "L7 AVG",   tip: "Batting average over last 7 games — highest weight in 56K score",      value: pick.l7pa  >= 3 ? (pick.l7hits  / pick.l7pa ).toFixed(3).replace("0.", ".") : "—" },
             { label: "L14 AVG",  tip: "Batting average over last 14 games",                                    value: pick.l14pa >= 3 ? (pick.l14hits / pick.l14pa).toFixed(3).replace("0.", ".") : "—" },
             { label: "L30 AVG",  tip: "Batting average over last 30 games — season baseline anchor",           value: pick.l30pa >= 3 ? (pick.l30hits / pick.l30pa).toFixed(3).replace("0.", ".") : "—" },
             { label: "STREAK",   tip: "Consecutive games with at least 1 hit — 5+ triggers Hot Streak bonus",  value: pick.activeStreak >= 1 ? `${pick.activeStreak}G` : "—" },
@@ -300,7 +300,7 @@ function SkeletonCard() {
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
-export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
+export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
   const [picks, setPicks]         = useState([]);
   const [status, setStatus]       = useState("idle"); // idle | loading | done | error
   const [progress, setProgress]   = useState({ scored: 0, total: 0 });
@@ -311,7 +311,6 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
     return d.toISOString().slice(0, 10);
   });
   const abortRef    = useRef(false);
-  const dateInputRef = useRef(null);
 
   // ─── Scoring pipeline ──────────────────────────────────────────────────────
   const runAnalysis = useCallback(async () => {
@@ -435,7 +434,7 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
             // Platoon (simple: check batter hand vs pitcher)
             const platoon = null; // surfaced as "—" if unavailable
 
-            const { confidence, tier, factors } = compute57KillerScore({
+            const { confidence, tier, factors } = compute56KillerScore({
               lineupPos,
               l7hits: s7.hits,   l7pa: s7.pa,
               l14hits: s14.hits, l14pa: s14.pa,
@@ -480,14 +479,12 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
 
         setProgress({ scored: Math.min(i + BATCH, candidates.length), total: candidates.length });
 
-        // Streaming update every 2 batches
-        if ((i / BATCH) % 2 === 1 || i + BATCH >= candidates.length) {
-          const interim = [...results]
-            .filter(p => p.confidence >= 60)
-            .sort((a, b) => b.confidence - a.confidence)
-            .slice(0, 10);
-          setPicks(interim);
-        }
+        // Streaming update — show results after every batch so UI never goes blank
+        const interim = [...results]
+          .filter(p => p.confidence >= 60)
+          .sort((a, b) => b.confidence - a.confidence)
+          .slice(0, 10);
+        setPicks(interim);
       }
 
       // Final sort — top 10 ≥ 82% confidence
@@ -499,7 +496,7 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
       setPicks(final);
       setStatus("done");
     } catch (err) {
-      console.error("[57Killer]", err);
+      console.error("[56Killer]", err);
       setErrorMsg(err.message ?? "Unknown error");
       setStatus("error");
     }
@@ -534,7 +531,7 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
             background: "linear-gradient(135deg, #f59e0b, #d97706)",
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
           }}>
-            57 Killer
+            56 Killer
           </span>
           <span style={{
             fontSize: 10, fontWeight: 800, letterSpacing: "0.12em",
@@ -556,45 +553,25 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
           display: "flex", gap: 10, flexWrap: "wrap",
           alignItems: "center", marginBottom: 20,
         }}>
-          {/* Date selector — styled button opens native picker via ref */}
-          <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
-            <button
-              type="button"
-              onClick={() => !isLoading && dateInputRef.current?.showPicker?.()}
-              disabled={isLoading}
-              style={{
-                display: "flex", alignItems: "center", gap: 8,
-                background: "var(--surface, #fff)",
-                border: `1px solid ${selectedDate ? "#f59e0b" : "var(--border, #D8DEED)"}`,
-                borderRadius: 8, padding: "8px 14px",
-                color: "var(--text-primary, #0C1A35)",
-                fontSize: 13, fontWeight: 700,
-                cursor: isLoading ? "not-allowed" : "pointer",
-                opacity: isLoading ? 0.5 : 1,
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              }}
-            >
-              <span className="material-icons" style={{ fontSize: 16, color: "#d97706" }}>calendar_today</span>
-              {selectedDate
-                ? new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
-                : "Select date"}
-              <span className="material-icons" style={{ fontSize: 14, color: "var(--text-muted)", marginLeft: 2 }}>arrow_drop_down</span>
-            </button>
-            {/* Hidden native input — positioned under button so fallback click also works */}
-            <input
-              ref={dateInputRef}
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              disabled={isLoading}
-              style={{
-                position: "absolute", inset: 0,
-                opacity: 0, cursor: "pointer",
-                width: "100%", height: "100%",
-                zIndex: isLoading ? -1 : 0,
-              }}
-            />
-          </div>
+          {/* Date selector — native input, fully clickable */}
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            disabled={isLoading}
+            style={{
+              height: 36, padding: "0 12px",
+              background: "var(--surface, #fff)",
+              border: `1px solid ${selectedDate ? "#f59e0b" : "var(--border, #D8DEED)"}`,
+              borderRadius: 8,
+              color: "var(--text-primary, #0C1A35)",
+              fontSize: 13, fontWeight: 600,
+              cursor: isLoading ? "not-allowed" : "pointer",
+              opacity: isLoading ? 0.5 : 1,
+              outline: "none",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+            }}
+          />
 
           <button
             onClick={isLoading ? () => { abortRef.current = true; } : runAnalysis}
@@ -610,9 +587,15 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
               transition: "opacity 0.2s",
             }}
           >
-            <span className="material-icons" style={{ fontSize: 16 }}>
-              {isLoading ? "stop" : "bolt"}
-            </span>
+            {isLoading
+              ? <span className="material-icons" style={{ fontSize: 16 }}>stop</span>
+              : <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" fill="rgba(0,0,0,0.15)" />
+                  <text x="8" y="11" textAnchor="middle" fontSize="6" fontWeight="900"
+                    fontFamily="'Inter', sans-serif" fill="currentColor" letterSpacing="-0.3">56</text>
+                  <line x1="12" y1="3" x2="4" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+            }
             {isLoading ? "Stop" : "Run Analysis"}
           </button>
 
@@ -698,9 +681,12 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
             textAlign: "center", padding: "48px 16px",
             color: "var(--text-muted, #8494B2)",
           }}>
-            <span className="material-icons" style={{ fontSize: 48, display: "block", marginBottom: 12, color: "var(--border-dark, #B8C2D8)" }}>
-              bolt
-            </span>
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ display: "block", margin: "0 auto 12px" }}>
+              <circle cx="24" cy="24" r="22" fill="var(--border, #D8DEED)" />
+              <text x="24" y="28" textAnchor="middle" fontSize="16" fontWeight="900"
+                fontFamily="'Inter', sans-serif" fill="var(--text-muted, #8494B2)" letterSpacing="-0.5">56</text>
+              <line x1="36" y1="12" x2="12" y2="36" stroke="var(--text-muted, #8494B2)" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: "var(--text-secondary, #445068)" }}>
               Ready to run
             </div>
