@@ -325,7 +325,25 @@ export async function fetchPitcherStats(pitcherId, season = SEASON, gameType) {
     const params = { stats: "season", group: "pitching", season, sportId: 1 };
     if (gameType) params.gameType = gameType;
     const data = await mlb(`/people/${pitcherId}/stats`, params);
-    const result = data.stats?.[0]?.splits?.[0]?.stat || {};
+    const splits = data.stats?.[0]?.splits?.[0]?.stat || {};
+
+    // ── kPct derivation layer ──────────────────────────────────────
+    // MLB API has no direct kPct field. Derive it in priority order:
+    //   1. strikeOuts / battersFaced  — most accurate (actual rate)
+    //   2. strikeoutsPer9Inn / 27     — proxy (~27 BF per 9 IP)
+    //   3. null                       — callers handle via ?? fallback
+    let kPct = null;
+    const so = parseFloat(splits.strikeOuts);
+    const bf = parseFloat(splits.battersFaced);
+    const k9 = parseFloat(splits.strikeoutsPer9Inn);
+    if (bf > 0 && so >= 0) {
+      kPct = so / bf;   // e.g. 0.278 = 27.8% K rate (most accurate)
+    } else if (k9 > 0) {
+      kPct = k9 / 27;   // rough proxy
+    }
+    // ──────────────────────────────────────────────────────────────
+
+    const result = { ...splits, kPct };  // kPct always present (number | null)
     cacheSet(ck, result, TTL.pitcher);
     return result;
   } catch { return {}; }
@@ -1068,9 +1086,23 @@ export function scoreColor(score) {
 }
 
 export function tierClass(tier) {
-  return { elite: "badge-elite", strong: "badge-strong", solid: "badge-solid", risky: "badge-risky" }[tier] || "badge-gray";
+  switch (tier?.toLowerCase()) {
+    case "elite":  return "badge-elite";
+    case "strong": return "badge-strong";
+    case "solid":  return "badge-solid";
+    case "watch":  return "badge-watch";  // 57K native tier
+    case "risky":  return "badge-risky";  // IQ algo tier
+    default:       return "badge-gray";
+  }
 }
 
 export function tierBadgeLabel(tier) {
-  return { elite: "🔥 Elite", strong: "✅ Strong", solid: "📊 Solid", risky: "⚠️ Risky" }[tier] || tier;
+  switch (tier?.toLowerCase()) {
+    case "elite":  return "🔥 Elite";
+    case "strong": return "✅ Strong";
+    case "solid":  return "📊 Solid";
+    case "watch":  return "👁️ Watch";   // 57K tier — distinct from Risky
+    case "risky":  return "⚠️ Risky";   // IQ tier
+    default:       return tier || "—";
+  }
 }
