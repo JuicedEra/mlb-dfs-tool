@@ -151,12 +151,27 @@ export async function fetchRoster(teamId) {
   const ck = `roster:${teamId}`;
   const hit = cacheGet(ck);
   if (hit) return hit;
-  const data = await mlb(`/teams/${teamId}/roster`, { rosterType: "active", hydrate: "person" });
-  const result = (data.roster || [])
+  const PITCHER_POS = new Set(["P","SP","RP","CP","TWP"]);
+  const parseRoster = (data) => (data.roster || [])
     .map(p => ({ id: p.person.id, name: p.person.fullName, position: p.position?.abbreviation, batSide: p.person.batSide?.code || "?" }))
-    .filter(p => !["P","SP","RP","CP"].includes(p.position));
-  cacheSet(ck, result, TTL.roster);
-  return result;
+    .filter(p => !PITCHER_POS.has(p.position));
+
+  // Try active roster first; fall back to fullRoster (spring training 40-man)
+  try {
+    const data = await mlb(`/teams/${teamId}/roster`, { rosterType: "active", hydrate: "person" });
+    const result = parseRoster(data);
+    if (result.length >= 5) {
+      cacheSet(ck, result, TTL.roster);
+      return result;
+    }
+  } catch { /* fall through */ }
+
+  try {
+    const data = await mlb(`/teams/${teamId}/roster`, { rosterType: "fullRoster", hydrate: "person" });
+    const result = parseRoster(data);
+    cacheSet(ck, result, TTL.roster);
+    return result;
+  } catch { return []; }
 }
 
 // ── Season stats ──────────────────────────────────────────────────────────
