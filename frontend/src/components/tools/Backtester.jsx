@@ -43,6 +43,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
   const [startDate, setStartDate] = useState(fmtDate(weekAgo));
   const [endDate, setEndDate]     = useState(fmtDate(addDays(today, -2))); // default to 2 days ago for free users
   const [topN, setTopN]           = useState(2);
+  const [algoMode, setAlgoMode]   = useState("iq"); // "iq" | "killer" | "both"
   const [running, setRunning]     = useState(false);
   const [progress, setProgress]   = useState({ day: "", done: 0, total: 0, msg: "" });
   const [results, setResults]     = useState(null);
@@ -152,7 +153,21 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
         }
 
         scored.sort((a, b) => b.score - a.score);
-        const topPicks = scored.slice(0, topN);
+
+        // In "both" mode: take topN from IQ (all picks, same scorer for now)
+        // and topN tagged as "killer" — in future, killer will use its own scorer
+        // For now both use IQ V4 scores; killer picks are next-N slice (distinct picks)
+        let topPicks = [];
+        if (algoMode === "both") {
+          const iqPicks    = scored.slice(0, topN).map(p => ({ ...p, algo: "iq" }));
+          const killerPool = scored.slice(topN, topN * 2 + 5)
+            .filter(p => !iqPicks.find(q => q.batterId === p.batterId))
+            .slice(0, topN)
+            .map(p => ({ ...p, algo: "killer" }));
+          topPicks = [...iqPicks, ...killerPool];
+        } else {
+          topPicks = scored.slice(0, topN).map(p => ({ ...p, algo: algoMode }));
+        }
 
         // 4. Fetch actual box scores and check hits
         const hitSets = new Map();
@@ -203,6 +218,49 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
           <h1 className="page-title">Backtester</h1>
           <p className="page-subtitle">Run the Hit Score algorithm on past dates and verify against actual box scores</p>
         </div>
+      </div>
+
+      {/* Algo Mode Toggle */}
+      <div className="card" style={{ padding: "14px 20px", marginBottom: 16, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.8px", textTransform: "uppercase", color: "var(--text-muted)", flexShrink: 0 }}>Algorithm</div>
+        <div style={{ display: "flex", background: "var(--surface-2)", borderRadius: 8, padding: 3, gap: 2 }}>
+          {[
+            { id: "iq",     label: "IQ Picks" },
+            { id: "killer", label: "57 Killer" },
+            { id: "both",   label: "Both" },
+          ].map(opt => (
+            <button key={opt.id} onClick={() => setAlgoMode(opt.id)} disabled={running}
+              style={{ padding: "6px 16px", borderRadius: 6, border: "none", cursor: running ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700,
+                background: algoMode === opt.id ? "var(--navy)" : "transparent",
+                color: algoMode === opt.id ? "white" : "var(--text-muted)",
+                transition: "all 0.15s" }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {/* BTS accuracy warning — escalates when both + topN >= 2 */}
+        {algoMode === "both" && topN >= 2 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 6,
+            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", fontSize: 11 }}>
+            <span className="material-icons" style={{ fontSize: 13, color: "var(--red-data)" }}>warning</span>
+            <span style={{ color: "var(--red-data)", fontWeight: 700 }}>BTS accuracy warning:</span>
+            <span style={{ color: "var(--text-muted)", marginLeft: 4 }}>
+              Both + Top {topN} = {topN * 2} picks/day. For accurate BTS simulation, use Top 1 or Top 2 only.
+            </span>
+          </div>
+        )}
+        {algoMode === "both" && topN === 1 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 6,
+            background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", fontSize: 11 }}>
+            <span className="material-icons" style={{ fontSize: 13, color: "var(--yellow)" }}>info</span>
+            <span style={{ color: "var(--text-muted)" }}>Showing top 1 from each algo side-by-side — 2 picks/day total.</span>
+          </div>
+        )}
+        {algoMode !== "both" && (
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            Testing <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>{algoMode === "iq" ? "IQ Picks" : "57 Killer"}</span> algorithm
+          </div>
+        )}
       </div>
 
       {/* Config */}
@@ -301,7 +359,15 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
       {results && (
         <>
           {/* Summary Cards */}
-          <div className="section-label">Summary</div>
+          <div className="section-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            Summary
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+              background: algoMode === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
+              color: algoMode === "killer" ? "var(--yellow)" : "var(--green-light)",
+              border: `1px solid ${algoMode === "killer" ? "rgba(245,158,11,0.3)" : "rgba(74,222,128,0.2)"}` }}>
+              {algoMode === "iq" ? "IQ Picks" : algoMode === "killer" ? "57 Killer" : "IQ Picks + 57 Killer"}
+            </span>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
             <SummaryCard label="Total Picks" value={results.summary.totalPicks} icon="format_list_numbered" />
             <SummaryCard label="Hits (Wins)" value={results.summary.wins} icon="check_circle" color="var(--green-light)" />
@@ -338,6 +404,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                 <thead>
                   <tr>
                     <th>Date</th>
+                    {algoMode === "both" && <th>Algo</th>}
                     <th>Pick</th>
                     <th>Team</th>
                     <th>vs SP</th>
@@ -356,6 +423,15 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                     ) : day.picks.map((p, pi) => (
                       <tr key={`${day.date}-${pi}`}>
                         {pi === 0 && <td rowSpan={day.picks.length} style={{ fontFamily: "var(--font-mono)", fontSize: 12, verticalAlign: "top" }}>{day.date}</td>}
+                        {algoMode === "both" && (
+                          <td>
+                            <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4,
+                              background: p.algo === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
+                              color: p.algo === "killer" ? "var(--yellow)" : "var(--green-light)" }}>
+                              {p.algo === "killer" ? "57K" : "IQ"}
+                            </span>
+                          </td>
+                        )}
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <img src={headshot(p.batterId)} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", background: "var(--surface-2)" }}
@@ -439,7 +515,20 @@ async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide },
     const l1 = computeSplit(gl, 1);
     const l3 = computeSplit(gl, 3);
     const l7 = computeSplit(gl, 7);
+    const l14 = computeSplit(gl, 14);
     const l15 = computeSplit(gl, 15);
+    const l30 = computeSplit(gl, 30);
+    const activeStreak = computeActiveStreak(gl);
+    const seasonGwH   = gl.filter(g => +g.hits > 0).length;
+    const seasonGames = gl.length;
+    // prevStreak: scan for broken streak (for bounce-back signal)
+    let prevStreak = 0;
+    if (gl.length && +gl[0]?.hits === 0) {
+      for (let i = 1; i < gl.length; i++) {
+        if (+gl[i].hits > 0) prevStreak++;
+        else break;
+      }
+    }
     const platoonKey = pitcher.hand === "L" ? "vs. Left" : "vs. Right";
     const platoonStat = platData[platoonKey] || {};
     const dnKey = game.isNight ? "Night" : "Day";
@@ -449,7 +538,8 @@ async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide },
     const hasBvP = !!(bvpStat && (bvpStat.atBats >= 5));
 
     const scoreData = computeHitScore({
-      l1, l3, l7, l15, bvp: bvpStat, platoon: platoonStat,
+      l1, l3, l7, l14, l15, l30,
+      bvp: bvpStat, platoon: platoonStat,
       parkFactor: pf, seasonAvg: seasonStat.avg,
       seasonStats: seasonStat,
       dayNight: dayNightStat, isHome: pitchingSide === "away",
@@ -457,6 +547,8 @@ async function scoreBatter({ batter, pitcher, game, battingTeam, pitchingSide },
       pitcherStats: pitStat,
       hasBvP, lineupPos: 5, pitcherDaysRest,
       weather: game.weather, venue: game.venue,
+      seasonGwH, seasonGames,
+      activeStreak, prevStreak,
     });
 
     return {
