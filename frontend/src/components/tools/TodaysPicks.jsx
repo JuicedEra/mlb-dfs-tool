@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  fetchGames, fetchRoster, fetchGameLog, computeSplit, computeActiveStreak,
+  fetchGames, fetchRoster, fetchGameLog, computeSplit, computeActiveStreak, computePreviousStreak,
   fetchBvP, fetchPlatoonSplits, fetchDayNightSplits, fetchSeasonStats,
   fetchPitcherStats, fetchPitcherGameLog, fetchAllLineups, fetchPersonInfo,
   fetchStatcastForPlayer, fetchLiveBoxscoreStats,
@@ -396,8 +396,15 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
       const l1  = computeSplit(gl, 1);
       const l3  = computeSplit(gl, 3);
       const l7  = computeSplit(gl, 7);
+      const l14 = computeSplit(gl, 14);
       const l15 = computeSplit(gl, 15);
+      const l30 = computeSplit(gl, 30);
       const streak = computeActiveStreak(gl);
+      const { prevStreak } = computePreviousStreak(gl);
+
+      // Season-long games with hit stats (for consistency signal)
+      const seasonGwH   = gl.filter(g => +g.hits > 0).length;
+      const seasonGames = gl.length;
 
       const platoonKey = pitcher.hand === "L" ? "vs. Left" : "vs. Right";
       const platoonStat = platData[platoonKey] || {};
@@ -414,7 +421,8 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
       const hasBvP = !!(bvpStat && (bvpStat.atBats >= 5));
 
       const scoreData = computeHitScore({
-        l1, l3, l7, l15, bvp: bvpStat, platoon: platoonStat,
+        l1, l3, l7, l14, l15, l30,
+        bvp: bvpStat, platoon: platoonStat,
         parkFactor: pf, seasonAvg: seasonStat.avg,
         seasonStats: seasonStat,
         dayNight: dayNightStat, isHome: pitchingSide === "away",
@@ -423,6 +431,9 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
         hasBvP, lineupPos, pitcherDaysRest,
         weather: game.weather, venue: game.venue,
         statcast,
+        seasonGwH, seasonGames,
+        activeStreak: streak,
+        prevStreak,
       });
 
       // Prop line lookup (non-blocking — loads if Odds API key is configured)
@@ -431,7 +442,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
 
       const hot = isPlayerHot(streak, l7?.avg, scoreData.score);
 
-      return { batter, pitcher, game, battingTeam, scoreData, l1, l3, l7, l15, streak, bvpStat, platoonStat, dayNightStat, seasonStat, pitStat, pf, hasBvP, propLine, hot, lineupPos, lineupStatus, isFallback: isThin, statcast };
+      return { batter, pitcher, game, battingTeam, scoreData, l1, l3, l7, l14, l15, l30, streak, bvpStat, platoonStat, dayNightStat, seasonStat, pitStat, pf, hasBvP, propLine, hot, lineupPos, lineupStatus, isFallback: isThin, statcast, seasonGwH, seasonGames };
     } catch { return null; }
   }
 
@@ -738,7 +749,7 @@ export default function TodaysPicks({ mode, isPremium = false, onUpgrade }) {
                         <td>
                           <WeatherCell weather={p.game.weather} venue={p.game.venue} />
                         </td>
-                        <td title={p.scoreData.breakdown ? `Contact: ${p.scoreData.breakdown.contact}/35 · Form: ${p.scoreData.breakdown.form}/25 · Matchup: ${p.scoreData.breakdown.matchup}/25 · Statcast: ${p.scoreData.breakdown.statcast}/10 · Env: ${p.scoreData.breakdown.env}/5` : ""}>
+                        <td title={p.scoreData.breakdown ? `Contact: ${p.scoreData.breakdown.contact}/38 · Form: ${p.scoreData.breakdown.form}/27 · Matchup: ${p.scoreData.breakdown.matchup}/24 · Statcast: ${p.scoreData.breakdown.statcast}/9 · Env: ${p.scoreData.breakdown.env}/4 | Streak: ${p.scoreData.breakdown.activeStreak}G (+${p.scoreData.breakdown.streakBonus}) · BncBk: ${p.scoreData.breakdown.prevStreak}G (+${p.scoreData.breakdown.bounceBackBonus}) · Whiff: ${p.scoreData.breakdown.whiffPct}% · PA%: ${p.scoreData.breakdown.paProbPct}% · L14: ${p.scoreData.breakdown.l14avg} · L30: ${p.scoreData.breakdown.l30avg} · Hit%: ${p.scoreData.breakdown.seasonHitRatePct}%` : ""}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                             <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color, lineHeight: 1 }}>{score}</div>
                             <div style={{ display:"flex", gap:4, alignItems:"center" }}>
