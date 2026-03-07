@@ -58,6 +58,9 @@
   --tier-risky:        #6B7280;
   --tier-risky-bg:     rgba(107,114,128,0.09);
   --tier-risky-border: rgba(107,114,128,0.18);
+  --tier-watch:        #94a3b8;
+  --tier-watch-bg:     rgba(148,163,184,0.08);
+  --tier-watch-border: rgba(148,163,184,0.20);
 
   /* ── Typography ── */
   --font-body:     'Roboto', sans-serif;
@@ -433,6 +436,7 @@ tbody td { padding: 10px 13px; vertical-align: middle; }
 .badge-strong { background: var(--tier-strong-bg); color: var(--tier-strong); border: 1px solid var(--tier-strong-border); }
 .badge-solid  { background: var(--tier-solid-bg);  color: var(--tier-solid);  border: 1px solid var(--tier-solid-border); }
 .badge-risky  { background: var(--tier-risky-bg);  color: var(--tier-risky);  border: 1px solid var(--tier-risky-border); }
+.badge-watch  { background: var(--tier-watch-bg);  color: var(--tier-watch);  border: 1px solid var(--tier-watch-border); }
 
 /* Data badges */
 .badge-green  { background: var(--data-green-bg);  color: var(--data-green);  border: 1px solid var(--data-green-border); }
