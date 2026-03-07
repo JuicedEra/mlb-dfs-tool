@@ -5,7 +5,7 @@ import {
   fetchPitcherStats, fetchPitcherGameLog, fetchPersonInfo, PARK_FACTORS,
   computeHitScore, scoreColor, tierBadgeLabel, tierClass, headshot,
 } from "../../utils/mlbApi";
-import { compute57KillerScore } from "./FiftySevenKiller";
+import { compute56KillerScore } from "./FiftySixKiller";
 import { btGetWeeklyUsage, btRecordUsage } from "../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -143,7 +143,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
         }
 
         // 3. Compute scores (batches of 8 for speed)
-        // Route to correct scorer: IQ uses computeHitScore, Killer uses compute57KillerScore
+        // Route to correct scorer: IQ uses computeHitScore, Killer uses compute56KillerScore
         const BATCH = 8;
 
         async function runScorer(fn) {
@@ -162,7 +162,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
         let topPicks = [];
         if (algoMode === "both") {
           // Both mode: top 1 from each algo = exactly 2 picks/day (or topN if topN=1 means 1 total)
-          // Intent: show the best IQ pick + best 57K pick, deduped by batterId
+          // Intent: show the best IQ pick + best 56K pick, deduped by batterId
           const [iqScored, killerScored] = await Promise.all([
             runScorer(scoreBatter),
             runScorer(scoreKillerBatter),
@@ -238,7 +238,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
         <div style={{ display: "flex", background: "var(--surface-2)", borderRadius: 8, padding: 3, gap: 2 }}>
           {[
             { id: "iq",     label: "IQ Picks" },
-            { id: "killer", label: "57 Killer" },
+            { id: "killer", label: "56 Killer" },
             { id: "both",   label: "Both" },
           ].map(opt => (
             <button key={opt.id} onClick={() => setAlgoMode(opt.id)} disabled={running}
@@ -256,13 +256,13 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
             background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", fontSize: 11 }}>
             <span className="material-icons" style={{ fontSize: 13, color: "var(--yellow)" }}>info</span>
             <span style={{ color: "var(--text-muted)" }}>
-              Both mode shows the <strong style={{ color: "var(--text-secondary)" }}>#1 IQ pick + #1 57K pick</strong> per day — always 2 picks, deduped if same player.
+              Both mode shows the <strong style={{ color: "var(--text-secondary)" }}>#1 IQ pick + #1 56K pick</strong> per day — always 2 picks, deduped if same player.
             </span>
           </div>
         )}
         {algoMode !== "both" && (
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            Testing <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>{algoMode === "iq" ? "IQ Picks" : "57 Killer"}</span> algorithm
+            Testing <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>{algoMode === "iq" ? "IQ Picks" : "56 Killer"}</span> algorithm
           </div>
         )}
       </div>
@@ -376,8 +376,8 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
               background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 12 }}>
               <span className="material-icons" style={{ fontSize: 15, color: "var(--yellow)", flexShrink: 0 }}>refresh</span>
               <span style={{ color: "var(--text-secondary)" }}>
-                Results below are from the <strong>{resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "57 Killer" : "Both"}</strong> run.
-                Re-run to see <strong>{algoMode === "iq" ? "IQ Picks" : algoMode === "killer" ? "57 Killer" : "Both"}</strong> results.
+                Results below are from the <strong>{resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "56 Killer" : "Both"}</strong> run.
+                Re-run to see <strong>{algoMode === "iq" ? "IQ Picks" : algoMode === "killer" ? "56 Killer" : "Both"}</strong> results.
               </span>
             </div>
           )}
@@ -389,7 +389,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
               background: resultsAlgoMode === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
               color: resultsAlgoMode === "killer" ? "var(--yellow)" : "var(--green-light)",
               border: `1px solid ${resultsAlgoMode === "killer" ? "rgba(245,158,11,0.3)" : "rgba(74,222,128,0.2)"}` }}>
-              {resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "57 Killer" : "IQ Picks + 57 Killer"}
+              {resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "56 Killer" : "IQ Picks + 56 Killer"}
             </span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
@@ -452,7 +452,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                             <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4,
                               background: p.algo === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
                               color: p.algo === "killer" ? "var(--yellow)" : "var(--green-light)" }}>
-                              {p.algo === "killer" ? "57K" : "IQ"}
+                              {p.algo === "killer" ? "56K" : "IQ"}
                             </span>
                           </td>
                         )}
@@ -593,7 +593,7 @@ async function scoreBatter({ batter, lineupPos, pitcher, game, battingTeam, pitc
   } catch { return null; }
 }
 
-// ─── 57 Killer scorer ────────────────────────────────────────────────────────
+// ─── 56 Killer scorer ────────────────────────────────────────────────────────
 // Distinct algorithm from IQ — prioritises lineup position + contact opportunity.
 // Only fetches what it needs: gamelog + pitcher K%.
 async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam, pitchingSide }, season, cutoffDate) {
@@ -639,7 +639,7 @@ async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam
     const pitcherKPct = pitStat.kPct ?? null;
     const isHome      = pitchingSide === "away";
 
-    const { confidence, tier } = compute57KillerScore({
+    const { confidence, tier } = compute56KillerScore({
       lineupPos,
       l7hits: s7.hits,   l7pa: s7.pa,
       l14hits: s14.hits, l14pa: s14.pa,
