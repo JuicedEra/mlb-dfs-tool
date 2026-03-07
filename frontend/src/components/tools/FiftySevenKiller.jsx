@@ -9,6 +9,7 @@ import {
   fetchConfirmedLineups,
   fetchGameLog,
   fetchPitcherStats,
+  fetchRoster,
   PARK_FACTORS,
 } from "../../utils/mlbApi";
 
@@ -244,16 +245,16 @@ function PlayerCard({ pick, rank }) {
           gap: 8,
         }}>
           {[
-            { label: "L7 AVG",  value: pick.l7pa  >= 3 ? (pick.l7hits  / pick.l7pa ).toFixed(3).replace("0.", ".") : "—" },
-            { label: "L14 AVG", value: pick.l14pa >= 3 ? (pick.l14hits / pick.l14pa).toFixed(3).replace("0.", ".") : "—" },
-            { label: "L30 AVG", value: pick.l30pa >= 3 ? (pick.l30hits / pick.l30pa).toFixed(3).replace("0.", ".") : "—" },
-            { label: "STREAK",  value: pick.activeStreak >= 1 ? `${pick.activeStreak}G` : "—" },
-            { label: "PARK",    value: pick.parkFactor != null ? pick.parkFactor : "—" },
-            { label: "K%",      value: pick.pitcherKPct != null ? `${(pick.pitcherKPct*100).toFixed(0)}%` : "—" },
-            { label: "VS LHP",  value: pick.platoon ?? "—" },
-            { label: "PITCHER", value: pick.pitcherName ?? "—", wide: true },
+            { label: "L7 AVG",   tip: "Batting average over last 7 games — highest weight in 57K score",      value: pick.l7pa  >= 3 ? (pick.l7hits  / pick.l7pa ).toFixed(3).replace("0.", ".") : "—" },
+            { label: "L14 AVG",  tip: "Batting average over last 14 games",                                    value: pick.l14pa >= 3 ? (pick.l14hits / pick.l14pa).toFixed(3).replace("0.", ".") : "—" },
+            { label: "L30 AVG",  tip: "Batting average over last 30 games — season baseline anchor",           value: pick.l30pa >= 3 ? (pick.l30hits / pick.l30pa).toFixed(3).replace("0.", ".") : "—" },
+            { label: "STREAK",   tip: "Consecutive games with at least 1 hit — 5+ triggers Hot Streak bonus",  value: pick.activeStreak >= 1 ? `${pick.activeStreak}G` : "—" },
+            { label: "LINEUP",   tip: "Confirmed batting order position — top of order earns max PA probability", value: pick.lineupPos ? `#${pick.lineupPos}${pick.lineupConfirmed ? " ✓" : " ~"}` : "~" },
+            { label: "PARK",     tip: "Park factor — 100 is neutral, 110+ is hitter-friendly, <90 is pitcher's park", value: pick.parkFactor != null ? pick.parkFactor : "—" },
+            { label: "OPP K%",   tip: "Opposing pitcher's strikeout rate — lower K% means more balls in play (better for hitters)", value: pick.pitcherKPct != null ? `${(pick.pitcherKPct*100).toFixed(0)}%` : "—" },
+            { label: "PITCHER",  tip: "Today's opposing starting pitcher",                                      value: pick.pitcherName ?? "—", wide: true },
           ].map(s => (
-            <div key={s.label} style={{ gridColumn: s.wide ? "span 2" : "span 1" }}>
+            <div key={s.label} title={s.tip} data-tooltip={s.tip} style={{ gridColumn: s.wide ? "span 2" : "span 1", cursor: "help" }}>
               <div style={{ fontSize: 10, color: "var(--text-muted, #8494B2)", letterSpacing: "0.07em", marginBottom: 2 }}>{s.label}</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary, #445068)" }}>{s.value}</div>
             </div>
@@ -326,24 +327,39 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
         return;
       }
 
-      // Gather all batters from lineups
+      // Gather all batters from lineups — fall back to active roster if lineup not yet posted
       const candidates = [];
       for (const game of games) {
         if (abortRef.current) break;
         const lineupData = await fetchConfirmedLineups(game.gamePk).catch(() => null);
         const sides = ["home", "away"];
         for (const side of sides) {
-          const lineup  = lineupData?.[side]?.players ?? [];
-          const confirmed = lineupData?.[side]?.status === "confirmed";
+          const confirmed  = lineupData?.[side]?.status === "confirmed";
+          let   lineup     = lineupData?.[side]?.players ?? [];
           const battingTeam = game[side];
           const opponent    = game[side === "home" ? "away" : "home"];
           const pitcherId   = game[side === "home" ? "away" : "home"]?.pitcher?.id;
           const pitcherNameFromGame = game[side === "home" ? "away" : "home"]?.pitcher?.name ?? null;
 
+          // ── Roster fallback: spring training + pre-game lineups are often empty ──
+          if (lineup.length < 5 && battingTeam?.teamId) {
+            try {
+              const roster = await fetchRoster(battingTeam.teamId);
+              // Roster is not ordered — assign positions 1-9 for top hitters (non-pitchers)
+              lineup = roster.slice(0, 9).map((p, idx) => ({
+                id: p.id,
+                name: p.name,
+                position: p.position,
+                batSide: p.batSide,
+                order: idx + 1,
+              }));
+            } catch { /* skip if roster also fails */ }
+          }
+
           for (let i = 0; i < lineup.length; i++) {
             candidates.push({
               batter: lineup[i],
-              lineupPos: i + 1,
+              lineupPos: confirmed ? (i + 1) : null, // unconfirmed = no position credit
               lineupConfirmed: confirmed,
               battingTeam,
               opponent,
@@ -539,49 +555,33 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
           display: "flex", gap: 10, flexWrap: "wrap",
           alignItems: "center", marginBottom: 20,
         }}>
-          {/* Date selector — colorScheme:dark forces the browser calendar to dark mode */}
-          <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
-            <span className="material-icons" style={{
-              position: "absolute", left: 10, fontSize: 16,
-              color: "#f59e0b", pointerEvents: "none", zIndex: 1,
-            }}>calendar_today</span>
+          {/* Date selector — label triggers the hidden native input; shows only our styled display */}
+          <label style={{ position: "relative", display: "inline-flex", alignItems: "center", cursor: isLoading ? "not-allowed" : "pointer" }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              background: "var(--surface, #fff)",
+              border: `1px solid ${selectedDate ? "#f59e0b" : "var(--border, #D8DEED)"}`,
+              borderRadius: 8, padding: "8px 14px",
+              color: "var(--text-primary, #0C1A35)",
+              fontSize: 13, fontWeight: 700,
+              userSelect: "none",
+              opacity: isLoading ? 0.5 : 1,
+              boxShadow: "var(--shadow-xs)",
+            }}>
+              <span className="material-icons" style={{ fontSize: 16, color: "#d97706" }}>calendar_today</span>
+              {selectedDate
+                ? new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+                : "Select date"}
+              <span className="material-icons" style={{ fontSize: 14, color: "var(--text-muted)", marginLeft: 2 }}>arrow_drop_down</span>
+            </div>
             <input
               type="date"
               value={selectedDate}
               onChange={e => setSelectedDate(e.target.value)}
               disabled={isLoading}
-              style={{
-                background: "var(--surface, #fff)",
-                border: `1px solid ${selectedDate ? "#f59e0b88" : "var(--border, #D8DEED)"}`,
-                borderRadius: 8,
-                color: "var(--text-primary, #0C1A35)",
-                colorScheme: "light",
-                padding: "8px 12px 8px 34px",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: isLoading ? "not-allowed" : "pointer",
-                outline: "none",
-                minWidth: 155,
-              }}
+              style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", top: 0, left: 0, cursor: "pointer" }}
             />
-          </div>
-
-          {/* Selected date readable label */}
-          {selectedDate && (
-            <span style={{
-              fontSize: 12,
-              color: "var(--text-secondary, #445068)",
-              fontWeight: 600,
-              background: "var(--surface-2, #F5F7FB)",
-              border: "1px solid var(--border, #D8DEED)",
-              borderRadius: 6, padding: "5px 10px",
-              whiteSpace: "nowrap",
-            }}>
-              {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
-                weekday: "short", month: "short", day: "numeric", year: "numeric",
-              })}
-            </span>
-          )}
+          </label>
 
           <button
             onClick={isLoading ? () => { abortRef.current = true; } : runAnalysis}
@@ -606,19 +606,27 @@ export default function FiftySevenKiller({ mode, isPremium, onUpgrade }) {
           {/* Tier filter chips */}
           {hasResults && (
             <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap" }}>
-              {["all", ...TIERS.map(t => t.label)].map(label => {
+              {[
+                { label: "all",    tip: "Show all tiers" },
+                { label: "ELITE",  tip: "Elite: 90+ confidence — strongest contact setups" },
+                { label: "STRONG", tip: "Strong: 82-89 — high-confidence plays" },
+                { label: "SOLID",  tip: "Solid: 74-81 — solid matchup and form" },
+                { label: "WATCH",  tip: "Watch: 60-73 — worth monitoring, less certainty" },
+              ].map(({ label, tip }) => {
                 const active = filterTier === label;
                 const tier   = TIERS.find(t => t.label === label);
                 return (
                   <button
                     key={label}
                     onClick={() => setFilterTier(label)}
+                    title={tip}
+                    data-tooltip={tip}
                     style={{
                       padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700,
                       cursor: "pointer", transition: "all 0.15s",
                       background: active ? (tier?.bg ?? "rgba(255,255,255,0.1)") : "transparent",
-                      border: `1px solid ${active ? (tier?.border ?? "rgba(255,255,255,0.3)") : "rgba(255,255,255,0.1)"}`,
-                      color: active ? (tier?.color ?? "#f1f5f9") : "#64748b",
+                      border: `1px solid ${active ? (tier?.border ?? "var(--border)") : "var(--border)"}`,
+                      color: active ? (tier?.color ?? "var(--text-primary)") : "var(--text-muted)",
                     }}
                   >
                     {label === "all" ? "ALL" : label}
