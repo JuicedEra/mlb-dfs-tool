@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   fetchGames, 
+  fetchRoster,
   fetchAllLineups, 
   computeHitScore, 
   headshot 
@@ -17,34 +18,57 @@ export default function FiftySevenKiller() {
       try {
         setLoading(true);
         
-        // 1. Fetch data for the selected date
-        let gData = await fetchGames(selectedDate);
-        let lData = [];
-        
-        try {
-          lData = await fetchAllLineups(selectedDate);
-        } catch (e) {
-          lData = [];
+        // 1. Get the Games for the date
+        let gamesData = await fetchGames(selectedDate);
+        if (!gamesData || gamesData.length === 0) {
+          gamesData = await fetchGames(); // Spring Training fallback
         }
 
-        // 2. SPRING TRAINING FALLBACK
-        // If the date-specific fetch returns nothing, fetch the 'current' live slate
-        if (!gData || gData.length === 0) {
-          gData = await fetchGames();
-        }
-
-        if (!gData || gData.length === 0) {
+        if (!gamesData || gamesData.length === 0) {
           setCandidates([]);
           return;
         }
 
-        // 3. Map using exact paths found in your mlbApi (p.batter.id)
-        const mapped = gData.map(p => {
-          const bId = p.batter ? p.batter.id : p.id;
-          const name = p.name || (p.batter ? p.batter.name : 'Unknown Player');
+        // 2. Fetch rosters for all teams in those games to find our players
+        const playerPool = [];
+        const lineupData = await fetchAllLineups(selectedDate).catch(() => []);
+
+        await Promise.all(gamesData.map(async (game) => {
+          const homeId = game.teams?.home?.team?.id;
+          const awayId = game.teams?.away?.team?.id;
           
-          // Check lineups array for this player
-          const isConfirmed = lData ? lData.some(l => 
+          if (homeId && awayId) {
+            const [homeRoster, awayRoster] = await Promise.all([
+              fetchRoster(homeId).catch(() => []),
+              fetchRoster(awayId).catch(() => [])
+            ]);
+
+            // Add players to pool with game context for the HitScore algorithm
+            homeRoster.forEach(p => {
+              playerPool.push({
+                ...p,
+                game: game,
+                team: game.teams.home.team.name,
+                oppPitcher: game.teams.away.probablePitcher?.fullName || 'TBD'
+              });
+            });
+            awayRoster.forEach(p => {
+              playerPool.push({
+                ...p,
+                game: game,
+                team: game.teams.away.team.name,
+                oppPitcher: game.teams.home.probablePitcher?.fullName || 'TBD'
+              });
+            });
+          }
+        }));
+
+        // 3. Map and Score
+        const mapped = playerPool.map(p => {
+          const bId = p.person?.id || p.id;
+          const name = p.person?.fullName || p.name || 'Unknown';
+          
+          const isStarting = lineupData ? lineupData.some(l => 
             l.lineup && l.lineup.some(h => String(h.id) === String(bId))
           ) : false;
 
@@ -53,19 +77,20 @@ export default function FiftySevenKiller() {
             id: bId,
             displayName: name,
             hitScore: typeof computeHitScore === 'function' ? computeHitScore(p) : 0,
-            img: headshot ? headshot(bId) : '',
-            isStarting: isConfirmed
+            img: headshot(bId),
+            isStarting: isStarting
           };
         });
 
-        // 4. Sort: Highest score first.
-        const topTen = mapped
+        // 4. Sort and Filter (Top 10)
+        const sorted = mapped
+          .filter(p => p.hitScore > 0)
           .sort((a, b) => b.hitScore - a.hitScore)
           .slice(0, 10);
 
-        setCandidates(topTen);
+        setCandidates(sorted);
       } catch (err) {
-        console.error('57 Killer Error:', err);
+        console.error('Data Fetch Error:', err);
       } finally {
         setLoading(false);
       }
@@ -81,7 +106,7 @@ export default function FiftySevenKiller() {
             57 <span className="text-red-500">KILLER</span>
           </h1>
           <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">
-            DiamondIQ Pro Optimization
+            Roster-Level Analytics Active
           </p>
         </div>
         <input 
@@ -93,40 +118,35 @@ export default function FiftySevenKiller() {
       </header>
 
       {loading ? (
-        <div className="py-20 text-center text-gray-500 font-bold animate-pulse">
-          CONNECTING TO MLB LIVE DATA...
-        </div>
+        <div className="py-20 text-center text-gray-500 font-bold animate-pulse">BUILDING PLAYER POOL...</div>
       ) : candidates.length === 0 ? (
         <div className="p-20 text-center bg-zinc-900/50 rounded-3xl border border-dashed border-white/10">
-          <p className="text-gray-400 font-bold">No active matchups detected for this date.</p>
+          <p className="text-gray-400 font-bold">No projected matchups found for this date.</p>
+          <button onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} className="mt-4 text-red-500 text-xs font-bold uppercase">Reset to Today</button>
         </div>
       ) : (
         <div className="grid gap-3">
           {candidates.map((player, idx) => (
             <div 
               key={player.id || idx}
-              className="bg-zinc-900 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:border-red-500 transition-all cursor-pointer group"
+              className="bg-zinc-900 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:border-red-500 transition-all cursor-pointer"
               onClick={() => { if(typeof openAddPick === 'function') openAddPick(player); }}
             >
               <div className="text-2xl font-black text-white/5 w-8 italic">{idx + 1}</div>
-              
               <div className="relative">
                 <img src={player.img} alt="" className="w-14 h-14 rounded-full bg-black border border-white/10" />
                 {player.isStarting && (
                   <span className="absolute -top-1 -right-1 text-green-500 material-icons text-lg bg-white rounded-full">check_circle</span>
                 )}
               </div>
-              
               <div className="flex-1">
                 <h3 className="font-bold text-lg text-white leading-tight">{player.displayName}</h3>
                 <p className="text-[10px] text-gray-500 font-black uppercase">
-                  {player.team || 'MLB'} <span className="opacity-30">vs</span> {player.oppPitcher || 'TBD'}
-                  {!player.isStarting && <span className="ml-2 text-orange-500/50 italic normal-case font-medium">(Projected)</span>}
+                  {player.team} <span className="opacity-30">vs</span> {player.oppPitcher}
                 </p>
               </div>
-
               <div className="text-right">
-                <div className="text-[10px] uppercase text-gray-500 font-bold">Hit Score</div>
+                <div className="text-[10px] uppercase text-gray-500 font-bold">Score</div>
                 <div className="text-3xl font-black text-red-500 italic leading-none">{Math.round(player.hitScore)}</div>
               </div>
             </div>
