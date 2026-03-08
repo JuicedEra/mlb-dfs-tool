@@ -5,7 +5,7 @@ import {
   fetchPitcherStats, fetchPitcherGameLog, fetchPersonInfo, PARK_FACTORS,
   computeHitScore, scoreColor, tierBadgeLabel, tierClass, headshot,
 } from "../../utils/mlbApi";
-import { compute56KillerScore } from "./FiftySixKiller";
+import { compute56BreakerScore } from "./FiftySixBreaker";
 import { btGetWeeklyUsage, btRecordUsage } from "../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 import PlayerPanel from "../shared/PlayerPanel";
@@ -13,6 +13,23 @@ import PlayerPanel from "../shared/PlayerPanel";
 const FREE_WEEKLY_LIMIT = 3;
 
 const SEASON = new Date().getFullYear();
+
+// ─── Session persistence — restore last test after page navigation ───────────
+// Uses sessionStorage so it auto-clears on tab close / long inactivity.
+const SESSION_KEY = "diq_backtest_last";
+function saveSession(data) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ data, ts: Date.now() })); } catch {}
+}
+function loadSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    // Expire after 4 hours of inactivity
+    if (Date.now() - ts > 4 * 3600_000) { sessionStorage.removeItem(SESSION_KEY); return null; }
+    return data;
+  } catch { return null; }
+}
 
 // Format date string helper
 function fmtDate(d) { return d.toLocaleDateString("en-CA"); }
@@ -41,35 +58,52 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
   const { user } = useAuth();
   const userId = user?.id || null;
   const today = new Date();
-  const weekAgo = addDays(today, -7);
-  const [startDate, setStartDate] = useState(fmtDate(weekAgo));
-  const [endDate, setEndDate]     = useState(fmtDate(addDays(today, -2))); // default to 2 days ago for free users
+  // Default: rolling last 7 days (end = yesterday for meaningful results)
+  const yesterday = addDays(today, -1);
+  const sevenDaysAgo = addDays(today, -7);
+  const [startDate, setStartDate] = useState(fmtDate(sevenDaysAgo));
+  const [endDate, setEndDate]     = useState(fmtDate(yesterday));
   const [topN, setTopN]           = useState(2);
   const [algoMode, setAlgoMode]   = useState("iq"); // "iq" | "killer" | "both"
   const [running, setRunning]     = useState(false);
   const [progress, setProgress]   = useState({ day: "", done: 0, total: 0, msg: "" });
   const [results, setResults]     = useState(null);
-  const [resultsAlgoMode, setResultsAlgoMode] = useState(null); // algo mode the results were actually run with
+  const [resultsAlgoMode, setResultsAlgoMode] = useState(null);
   const [weeklyUsage, setWeeklyUsage] = useState(0);
-  const [panelPick, setPanelPick] = useState(null); // PlayerPanel target
+  const [panelPick, setPanelPick] = useState(null);
+  const [sessionRestored, setSessionRestored] = useState(false); // track if we've restored once
   const abortRef = useRef(false);
 
-  // Load weekly usage count on mount
+  // Load weekly usage on mount + restore last session (only on first visit per session)
   useEffect(() => {
     btGetWeeklyUsage(userId).then(setWeeklyUsage);
+    if (!sessionRestored) {
+      const saved = loadSession();
+      if (saved) {
+        setResults(saved.results);
+        setResultsAlgoMode(saved.algoMode);
+        if (saved.startDate) setStartDate(saved.startDate);
+        if (saved.endDate)   setEndDate(saved.endDate);
+        if (saved.topN)      setTopN(saved.topN);
+        if (saved.algoMode)  setAlgoMode(saved.algoMode);
+      }
+      setSessionRestored(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const todayStr     = fmtDate(today);
   const tomorrowStr  = fmtDate(addDays(today, 1));
-  const twoDaysAgoStr = fmtDate(addDays(today, -2)); // free users max date
+  const yesterdayStr = fmtDate(addDays(today, -1)); // free users can access up to yesterday
 
   // Free user rules:
-  // 1. Cannot select yesterday, today, or future (would reveal current picks)
-  // 2. Limited to FREE_WEEKLY_LIMIT backtests per rolling 7-day window
+  // 1. Cannot select today or future (would reveal current picks before games)
+  // 2. Yesterday is accessible to free users (games are complete, not "current")
+  // 3. Limited to FREE_WEEKLY_LIMIT backtests per rolling 7-day window
   function dateBlockedForFree(dateStr) {
-    return dateStr >= twoDaysAgoStr; // yesterday + today + future all blocked
+    return dateStr >= todayStr; // today + future blocked (not yesterday)
   }
-  const rangeRestricted = !isPremium && (startDate >= twoDaysAgoStr || endDate >= twoDaysAgoStr);
+  const rangeRestricted = !isPremium && (startDate >= todayStr || endDate >= todayStr);
   const quotaExceeded   = !isPremium && weeklyUsage >= FREE_WEEKLY_LIMIT;
   const freeUsesLeft    = Math.max(0, FREE_WEEKLY_LIMIT - weeklyUsage);
 
@@ -145,7 +179,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
         }
 
         // 3. Compute scores (batches of 8 for speed)
-        // Route to correct scorer: IQ uses computeHitScore, Killer uses compute56KillerScore
+        // Route to correct scorer: IQ uses computeHitScore, Breaker uses compute56BreakerScore
         const BATCH = 8;
 
         async function runScorer(fn) {
@@ -164,10 +198,10 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
         let topPicks = [];
         if (algoMode === "both") {
           // Both mode: top 1 from each algo = exactly 2 picks/day (or topN if topN=1 means 1 total)
-          // Intent: show the best IQ pick + best 56K pick, deduped by batterId
+          // Intent: show the best IQ pick + best 56B pick, deduped by batterId
           const [iqScored, killerScored] = await Promise.all([
             runScorer(scoreBatter),
-            runScorer(scoreKillerBatter),
+            runScorer(scoreBreakerBatter),
           ]);
           const iqTop     = iqScored[0]     ? { ...iqScored[0],     algo: "iq"     } : null;
           const iqId      = iqTop?.batterId;
@@ -175,24 +209,32 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
           const killerPick = killerTop ? { ...killerTop, algo: "killer" } : null;
           topPicks = [iqTop, killerPick].filter(Boolean);
         } else if (algoMode === "killer") {
-          const scored = await runScorer(scoreKillerBatter);
+          const scored = await runScorer(scoreBreakerBatter);
           topPicks = scored.slice(0, topN).map(p => ({ ...p, algo: "killer" }));
         } else {
           const scored = await runScorer(scoreBatter);
           topPicks = scored.slice(0, topN).map(p => ({ ...p, algo: "iq" }));
         }
 
-        // 4. Fetch actual box scores and check hits
+        // 4. Fetch actual box scores — ONLY for completed games
+        // If abstractState != "Final"/"Completed", the box score exists but shows
+        // 0 hits (game hasn't been played) → Set() is truthy → gotHit = false (WRONG).
+        // Fix: only fetch hits for games that are definitively finished.
         const hitSets = new Map();
+        const finalGames = games.filter(g =>
+          g.abstractState === "Final" ||
+          /final|completed/i.test(g.status || "")
+        );
         await Promise.allSettled(
-          games.map(async g => {
+          finalGames.map(async g => {
             hitSets.set(g.gamePk, await fetchBoxHits(g.gamePk));
           })
         );
 
         const picks = topPicks.map(p => {
           const actualHits = hitSets.get(p.gamePk);
-          const gotHit = actualHits ? actualHits.has(p.batterId) : null;
+          // null if game not yet final — never false for future/in-progress games
+          const gotHit = actualHits != null ? actualHits.has(p.batterId) : null;
           return { ...p, gotHit };
         });
 
@@ -214,11 +256,14 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
       }
     }
 
-    setResults({
+    const resultData = {
       days: dayResults,
       summary: { totalPicks, wins, losses, unknown, winRate: totalPicks - unknown > 0 ? ((wins / (wins + losses)) * 100).toFixed(1) : "—", tierHits },
-    });
-    setResultsAlgoMode(algoMode); // lock the display label to what was actually run
+    };
+    setResults(resultData);
+    setResultsAlgoMode(algoMode);
+    // Persist to session so navigating away and back restores this test
+    saveSession({ results: resultData, algoMode, startDate, endDate, topN });
     setProgress(p => ({ ...p, done: days.length, msg: "Complete" }));
     setRunning(false);
   }
@@ -240,7 +285,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
         <div style={{ display: "flex", background: "var(--surface-2)", borderRadius: 8, padding: 3, gap: 2 }}>
           {[
             { id: "iq",     label: "IQ Picks" },
-            { id: "killer", label: "56 Killer" },
+            { id: "killer", label: "56 Breaker" },
             { id: "both",   label: "Both" },
           ].map(opt => (
             <button key={opt.id} onClick={() => setAlgoMode(opt.id)} disabled={running}
@@ -258,13 +303,13 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
             background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", fontSize: 11 }}>
             <span className="material-icons" style={{ fontSize: 13, color: "var(--yellow)" }}>info</span>
             <span style={{ color: "var(--text-muted)" }}>
-              Both mode shows the <strong style={{ color: "var(--text-secondary)" }}>#1 IQ pick + #1 56K pick</strong> per day — always 2 picks, deduped if same player.
+              Both mode shows the <strong style={{ color: "var(--text-secondary)" }}>#1 IQ pick + #1 56B pick</strong> per day — always 2 picks, deduped if same player.
             </span>
           </div>
         )}
         {algoMode !== "both" && (
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            Testing <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>{algoMode === "iq" ? "IQ Picks" : "56 Killer"}</span> algorithm
+            Testing <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>{algoMode === "iq" ? "IQ Picks" : "56 Breaker"}</span> algorithm
           </div>
         )}
       </div>
@@ -294,7 +339,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                 <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>Free users get {FREE_WEEKLY_LIMIT} backtests per 7 days.</span></>
               ) : (
                 <><span style={{ fontWeight: 700, color: "var(--data-green)" }}>Free Backtester</span>
-                <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>{freeUsesLeft} of {FREE_WEEKLY_LIMIT} uses left this week · Historical dates only (not yesterday/today)</span></>
+                <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>{freeUsesLeft} of {FREE_WEEKLY_LIMIT} uses left this week · Historical dates up to yesterday</span></>
               )}
             </div>
             {quotaExceeded && (
@@ -312,7 +357,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
             <span style={{ fontSize: 12 }}>
               <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle", color: "var(--yellow)", marginRight: 6 }}>lock</span>
               <span style={{ fontWeight: 700, color: "var(--yellow)" }}>PRO required</span>
-              <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>Yesterday and today's rankings are PRO-only — they reveal current picks.</span>
+              <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>Today's rankings are PRO-only — they reveal current picks before games start.</span>
             </span>
             <button className="btn btn-sm" onClick={() => onUpgrade && onUpgrade()}
               style={{ marginLeft: 12, flexShrink: 0, fontSize: 9, padding: "2px 10px", background: "var(--yellow)", color: "#0A2342", border: "none", fontWeight: 800 }}>
@@ -325,13 +370,13 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
           <div className="form-field">
             <label className="form-label">Start Date</label>
             <input type="date" className="form-input" value={startDate}
-              max={isPremium ? todayStr : twoDaysAgoStr}
+              max={isPremium ? todayStr : yesterdayStr}
               onChange={e => setStartDate(e.target.value)} disabled={running} />
           </div>
           <div className="form-field">
             <label className="form-label">End Date</label>
             <input type="date" className="form-input" value={endDate}
-              max={isPremium ? todayStr : twoDaysAgoStr}
+              max={isPremium ? todayStr : yesterdayStr}
               onChange={e => setEndDate(e.target.value)} disabled={running} />
           </div>
           <div className="form-field">
@@ -378,8 +423,8 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
               background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 12 }}>
               <span className="material-icons" style={{ fontSize: 15, color: "var(--yellow)", flexShrink: 0 }}>refresh</span>
               <span style={{ color: "var(--text-secondary)" }}>
-                Results below are from the <strong>{resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "56 Killer" : "Both"}</strong> run.
-                Re-run to see <strong>{algoMode === "iq" ? "IQ Picks" : algoMode === "killer" ? "56 Killer" : "Both"}</strong> results.
+                Results below are from the <strong>{resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "56 Breaker" : "Both"}</strong> run.
+                Re-run to see <strong>{algoMode === "iq" ? "IQ Picks" : algoMode === "killer" ? "56 Breaker" : "Both"}</strong> results.
               </span>
             </div>
           )}
@@ -391,7 +436,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
               background: resultsAlgoMode === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
               color: resultsAlgoMode === "killer" ? "var(--yellow)" : "var(--green-light)",
               border: `1px solid ${resultsAlgoMode === "killer" ? "rgba(245,158,11,0.3)" : "rgba(74,222,128,0.2)"}` }}>
-              {resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "56 Killer" : "IQ Picks + 56 Killer"}
+              {resultsAlgoMode === "iq" ? "IQ Picks" : resultsAlgoMode === "killer" ? "56 Breaker" : "IQ Picks + 56 Breaker"}
             </span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
@@ -424,6 +469,18 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
 
           {/* Day-by-Day */}
           <div className="section-label">Day-by-Day Results</div>
+
+          {/* IQ vs live discrepancy note */}
+          {(resultsAlgoMode === "iq" || resultsAlgoMode === "both") && (
+            <div style={{ marginBottom: 12, padding: "9px 14px", borderRadius: 8, fontSize: 11,
+              background: "rgba(148,163,184,0.06)", border: "1px solid rgba(148,163,184,0.2)",
+              color: "var(--text-muted)", lineHeight: 1.6 }}>
+              <span className="material-icons" style={{ fontSize: 13, verticalAlign: "middle", marginRight: 5, color: "#94a3b8" }}>info</span>
+              <strong style={{ color: "var(--text-secondary)" }}>Note:</strong> Backtester IQ scores use confirmed boxscore batting orders and omit prop-line, Statcast, and live lineup data.
+              Live <em>Today's Picks</em> uses a richer dataset — rankings may differ, especially for early dates before lineups post.
+            </div>
+          )}
+
           <div className="card" style={{ padding: 0 }}>
             <div className="table-wrap">
               <table>
@@ -436,6 +493,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                     <th>vs SP</th>
                     <th>Score</th>
                     <th>Tier</th>
+                    {(resultsAlgoMode === "killer" || resultsAlgoMode === "both") && <th>Factors</th>}
                     <th style={{ width: 80 }}>Result</th>
                   </tr>
                 </thead>
@@ -444,7 +502,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                     day.picks.length === 0 ? (
                       <tr key={day.date}>
                         <td style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{day.date}</td>
-                        <td colSpan={6} style={{ color: "var(--text-muted)", fontSize: 12 }}>{day.note || "No data"}</td>
+                        <td colSpan={7} style={{ color: "var(--text-muted)", fontSize: 12 }}>{day.note || "No data"}</td>
                       </tr>
                     ) : day.picks.map((p, pi) => (
                       <tr
@@ -465,7 +523,7 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                             <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4,
                               background: p.algo === "killer" ? "rgba(245,158,11,0.15)" : "rgba(74,222,128,0.1)",
                               color: p.algo === "killer" ? "var(--yellow)" : "var(--green-light)" }}>
-                              {p.algo === "killer" ? "56K" : "IQ"}
+                              {p.algo === "killer" ? "56B" : "IQ"}
                             </span>
                           </td>
                         )}
@@ -480,10 +538,53 @@ export default function Backtester({ isPremium = false, onUpgrade }) {
                         <td style={{ fontSize: 12 }}>{p.pitcherName} <span className={`badge ${p.pitcherHand === "L" ? "hand-L" : "hand-R"}`} style={{ fontSize: 9 }}>{p.pitcherHand}HP</span></td>
                         <td><span style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 800, color: scoreColor(p.score) }}>{p.score}</span></td>
                         <td><span className={`badge ${tierClass(p.tier)}`} style={{ fontSize: 9 }}>{tierBadgeLabel(p.tier)}</span></td>
+                        {/* Score factors — 56B only */}
+                        {(resultsAlgoMode === "killer" || resultsAlgoMode === "both") && (
+                          <td>
+                            {(p.algo === "killer" || resultsAlgoMode === "killer") && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 180 }}>
+                                {/* Metric chips */}
+                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                  {p.l7avg != null && (
+                                    <span title="L7 batting average" style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4,
+                                      background: "var(--surface-2)", border: "1px solid var(--border)",
+                                      color: parseFloat(p.l7avg) >= 0.350 ? "var(--green-light)" : parseFloat(p.l7avg) >= 0.250 ? "var(--yellow)" : "var(--red-data)",
+                                      fontWeight: 700 }}>
+                                      L7 {parseFloat(p.l7avg).toFixed(3).replace("0.", ".")}
+                                    </span>
+                                  )}
+                                  {p.activeStreak >= 1 && (
+                                    <span title="Active hit streak" style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4,
+                                      background: p.activeStreak >= 5 ? "rgba(245,158,11,0.12)" : "var(--surface-2)",
+                                      border: `1px solid ${p.activeStreak >= 5 ? "rgba(245,158,11,0.4)" : "var(--border)"}`,
+                                      color: p.activeStreak >= 5 ? "var(--yellow)" : "var(--text-muted)", fontWeight: 700 }}>
+                                      {p.activeStreak}G streak
+                                    </span>
+                                  )}
+                                  {p.pitcherKPct != null && (
+                                    <span title="Opposing pitcher K%" style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4,
+                                      background: p.pitcherKPct < 0.2 ? "rgba(167,139,250,0.12)" : "var(--surface-2)",
+                                      border: `1px solid ${p.pitcherKPct < 0.2 ? "rgba(167,139,250,0.4)" : "var(--border)"}`,
+                                      color: p.pitcherKPct < 0.2 ? "#a78bfa" : "var(--text-muted)", fontWeight: 700 }}>
+                                      K% {(p.pitcherKPct * 100).toFixed(0)}%
+                                    </span>
+                                  )}
+                                  {p.parkFactor != null && p.parkFactor >= 105 && (
+                                    <span title="Hitter-friendly park" style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4,
+                                      background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.3)",
+                                      color: "#38bdf8", fontWeight: 700 }}>
+                                      PF {p.parkFactor}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        )}
                         <td>
                           {p.gotHit === true && <span className="badge badge-green" style={{ fontSize: 10 }}><span className="material-icons" style={{ fontSize: 12 }}>check</span> HIT</span>}
                           {p.gotHit === false && <span className="badge badge-red" style={{ fontSize: 10 }}><span className="material-icons" style={{ fontSize: 12 }}>close</span> NO HIT</span>}
-                          {p.gotHit === null && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>N/A</span>}
+                          {p.gotHit === null && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Pending</span>}
                         </td>
                       </tr>
                     ))
@@ -616,10 +717,10 @@ async function scoreBatter({ batter, lineupPos, pitcher, game, battingTeam, pitc
   } catch { return null; }
 }
 
-// ─── 56 Killer scorer ────────────────────────────────────────────────────────
+// ─── 56 Breaker scorer ────────────────────────────────────────────────────────
 // Distinct algorithm from IQ — prioritises lineup position + contact opportunity.
 // Only fetches what it needs: gamelog + pitcher K%.
-async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam, pitchingSide }, season, cutoffDate) {
+async function scoreBreakerBatter({ batter, lineupPos, pitcher, game, battingTeam, pitchingSide }, season, cutoffDate) {
   try {
     const [gamelog, pitcherStat] = await Promise.allSettled([
       fetchGameLog(batter.id, season),
@@ -662,7 +763,7 @@ async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam
     const pitcherKPct = pitStat.kPct ?? null;
     const isHome      = pitchingSide === "away";
 
-    const { confidence, tier } = compute56KillerScore({
+    const { confidence, tier, factors } = compute56BreakerScore({
       lineupPos,
       l7hits: s7.hits,   l7pa: s7.pa,
       l14hits: s14.hits, l14pa: s14.pa,
@@ -681,11 +782,16 @@ async function scoreKillerBatter({ batter, lineupPos, pitcher, game, battingTeam
       pitcherId: pitcher.id, pitcherName: pitcher.name, pitcherHand: pitcher.hand || "R",
       teamAbbr: battingTeam.abbr, gamePk: game.gamePk, venue: game.venue ?? "",
       score: confidence,
+      // Score factor details for backtester card display
+      l7avg:    s7.pa  >= 3 ? (s7.hits  / s7.pa ).toFixed(3) : null,
+      l14avg:   s14.pa >= 3 ? (s14.hits / s14.pa).toFixed(3) : null,
+      activeStreak, parkFactor: pf, pitcherKPct,
+      scoreFactors: factors,
       // Normalize tier label to match existing tierClass/tierBadgeLabel helpers
       tier: tier.label === "ELITE"  ? "elite"
           : tier.label === "STRONG" ? "strong"
           : tier.label === "SOLID"  ? "solid"
-          : tier.label === "WATCH"  ? "watch"   // ← correct mapping (was "risky")
+          : tier.label === "WATCH"  ? "watch"
           : "watch",
       hasBvP: false,
     };
