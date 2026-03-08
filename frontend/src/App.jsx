@@ -11,7 +11,7 @@ import ABSTracker from "./components/tools/ABSTracker";
 import StreamerFinder from "./components/tools/StreamerFinder";
 import ProfilePage from "./components/tools/ProfilePage";
 import Leaderboard from "./components/tools/Leaderboard";
-import FiftySixKiller from "./components/tools/FiftySixKiller";
+import FiftySixBreaker from "./components/tools/FiftySixBreaker";
 import AuthModal from "./components/shared/AuthModal";
 import { fetchMLBEvents } from "./utils/propLinesApi";
 import { HAS_STRIPE, redirectToCheckout } from "./utils/stripe";
@@ -24,7 +24,7 @@ const CONTACT_EMAIL = "diamondiqinfo@gmail.com";
 const NAV = [
   { section: "Today", items: [
     { id: "picks",    label: "Today's Picks",   icon: "IQ",  iconType: "text",    badge: "LIVE" },
-    { id: "57killer", label: "56 Killer",        icon: "56", iconType: "text56",     badge: "NEW"  },
+    { id: "57killer", label: "56 Breaker",        icon: "56", iconType: "text56",     badge: "NEW"  },
     { id: "research", label: "Player Research",  icon: "manage_search" },
     { id: "pitchers", label: "Pitcher Intel",    icon: "sports_baseball",    pro: true },
     { id: "abs",      label: "ABS Challenges",   icon: "gavel",              pro: true, badge: "NEW" },
@@ -330,7 +330,7 @@ export default function App() {
           </aside>
           <main className="main-content">
             {activeTool === "picks"    && <TodaysPicks mode={mode} isPremium={isPremium} onUpgrade={handleUpgrade} />}
-            {activeTool === "57killer" && <FiftySixKiller mode={mode} isPremium={isPremium} onUpgrade={handleUpgrade} />}
+            {activeTool === "57killer" && <FiftySixBreaker mode={mode} isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "research" && <ResearchHub isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "pitchers" && <PitcherIntel isPremium={isPremium} onUpgrade={handleUpgrade} />}
             {activeTool === "abs"      && <ABSTracker />}
