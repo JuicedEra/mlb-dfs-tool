@@ -1,5 +1,5 @@
-// src/components/tools/FiftySixKiller.jsx
-// DiamondIQ PRO — 56 Killer Tool v2
+// src/components/tools/FiftySixBreaker.jsx
+// DiamondIQ PRO — 56 Breaker Tool v2
 // Composite score: lineup pos, rolling hit rate, PA probability, park factor, pitcher K%, home/road risk
 // Formula hidden — confidence bars + tier labels + factor pills only
 //
@@ -15,7 +15,7 @@
 // - Fix: interim + final threshold unified at CONF_THRESHOLD constant for easy future tuning
 // - UI: summary bar copy changed from "X plays found" → "X hitters picked"
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   fetchGames,
   fetchConfirmedLineups,
@@ -28,6 +28,10 @@ import {
   headshot,
 } from "../../utils/mlbApi";
 import PlayerPanel from "../shared/PlayerPanel";
+
+// ─── Module-level cache — survives component unmount/remount ─────────────────
+// Keyed by date string → { picks, ts }
+const _56bCache = {};
 
 // ─── Minimum confidence to surface a result ──────────────────────────────────
 // 40 = show any player with reasonable form data, even pre-lineup
@@ -52,16 +56,15 @@ const FACTOR_DEFS = {
   topOrder:     { label: "⚡ Top of Order",   activeColor: "#22c55e" },
   parkFriendly: { label: "🏟️ Park Friendly",  activeColor: "#38bdf8" },
   lowK:         { label: "🎯 Low-K Pitcher",  activeColor: "#a78bfa" },
-  homeAdvantage:{ label: "🏠 Home Advantage", activeColor: "#34d399" },
   highPA:       { label: "📊 High PA Prob",   activeColor: "#fb923c" },
   bounceBack:   { label: "↩️ Bounce-Back",    activeColor: "#f472b6" },
 };
 
-// ─── compute56KillerScore ────────────────────────────────────────────────────
+// ─── compute56BreakerScore ────────────────────────────────────────────────────
 // Weights: lineupPos 30%, rollingHitRate 25%, paProbability 20%,
 //          parkFactor 10%, pitcherKInverse 10%, homeRoadRisk 5%
 // Returns { confidence, tier, factors[], breakdown_hidden }
-export function compute56KillerScore({
+export function compute56BreakerScore({
   lineupPos,          // 1-9, null if unknown
   l7hits, l7pa,       // last 7 games
   l14hits, l14pa,
@@ -113,8 +116,9 @@ export function compute56KillerScore({
   const kInverse = pitcherKPct != null ? Math.max(0, 1 - pitcherKPct) : 0.65;
   const kScore = kInverse * 10;
 
-  // 6. Home/road risk (5pts)
-  const homeScore = isHome ? 5 : 2.5;
+  // 6. Home/road: neutral — BTS doesn't favor home teams
+  // (away teams actually get extra ABs in tied extra innings)
+  const homeScore = 3;
 
   const raw = lineupScore + hitRateScore + paScore + pfScore + kScore + homeScore;
   // Max theoretical ~100; clamp to 0-100
@@ -126,7 +130,6 @@ export function compute56KillerScore({
   if (lineupPos != null && lineupPos <= 3) factors.push("topOrder");
   if ((parkFactor ?? 100) >= 105) factors.push("parkFriendly");
   if (pitcherKPct != null && pitcherKPct < 0.2) factors.push("lowK");
-  if (isHome) factors.push("homeAdvantage");
   if (lineupPos != null && lineupPos <= 4 && lineupConfirmed) factors.push("highPA");
   if (prevStreak >= 5) factors.push("bounceBack");
 
@@ -302,15 +305,98 @@ function PlayerCard({ pick, rank, onOpen }) {
         <ConfidenceBar value={pick.confidence} tier={tier} />
       </div>
 
-      {/* Factor pills */}
-      {pick.factors?.length > 0 && (
+      {/* ── Always-visible metric chips ─────────────────────────────────── */}
+      {/* Shows the 3 most impactful inputs so users can quickly verify the score */}
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        {/* L7 AVG */}
         <div
-          style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}
-          onClick={() => setExpanded(e => !e)}
+          title="Batting average over last 7 games — highest weight in 56B score (55%)"
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            background: "var(--surface-2, #F5F7FB)",
+            border: "1px solid var(--border, #D8DEED)",
+            borderRadius: 6, padding: "4px 9px", cursor: "help",
+          }}
         >
-          {pick.factors.map(f => <FactorPill key={f} factorKey={f} />)}
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "var(--text-muted, #8494B2)", textTransform: "uppercase" }}>L7</span>
+          <span style={{
+            fontSize: 13, fontWeight: 800,
+            color: (() => {
+              if (pick.l7pa < 3) return "var(--text-muted, #8494B2)";
+              const avg = pick.l7hits / pick.l7pa;
+              return avg >= 0.35 ? "#22c55e" : avg >= 0.25 ? "#f59e0b" : "#ef4444";
+            })(),
+          }}>
+            {pick.l7pa >= 3 ? (pick.l7hits / pick.l7pa).toFixed(3).replace("0.", ".") : "—"}
+          </span>
         </div>
-      )}
+
+        {/* Streak */}
+        <div
+          title={`Active hit streak. 5+ games triggers 🔥 Hot Streak bonus.`}
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            background: pick.activeStreak >= 5 ? "rgba(245,158,11,0.1)" : "var(--surface-2, #F5F7FB)",
+            border: `1px solid ${pick.activeStreak >= 5 ? "rgba(245,158,11,0.4)" : "var(--border, #D8DEED)"}`,
+            borderRadius: 6, padding: "4px 9px", cursor: "help",
+          }}
+        >
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "var(--text-muted, #8494B2)", textTransform: "uppercase" }}>STK</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: pick.activeStreak >= 5 ? "#f59e0b" : pick.activeStreak >= 1 ? "var(--text-secondary, #445068)" : "var(--text-muted, #8494B2)" }}>
+            {pick.activeStreak >= 1 ? `${pick.activeStreak}G` : "—"}
+          </span>
+        </div>
+
+        {/* Opp K% */}
+        <div
+          title="Opposing pitcher's strikeout rate — below 20% = Low-K bonus (more balls in play)"
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            background: pick.pitcherKPct != null && pick.pitcherKPct < 0.2 ? "rgba(167,139,250,0.1)" : "var(--surface-2, #F5F7FB)",
+            border: `1px solid ${pick.pitcherKPct != null && pick.pitcherKPct < 0.2 ? "rgba(167,139,250,0.4)" : "var(--border, #D8DEED)"}`,
+            borderRadius: 6, padding: "4px 9px", cursor: "help",
+          }}
+        >
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "var(--text-muted, #8494B2)", textTransform: "uppercase" }}>K%</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: pick.pitcherKPct != null && pick.pitcherKPct < 0.2 ? "#a78bfa" : "var(--text-secondary, #445068)" }}>
+            {pick.pitcherKPct != null ? `${(pick.pitcherKPct * 100).toFixed(0)}%` : "—"}
+          </span>
+        </div>
+
+        {/* Park factor */}
+        {pick.parkFactor != null && (
+          <div
+            title={`Park factor: 100 = neutral, 110+ = hitter-friendly, <90 = pitcher's park`}
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              background: pick.parkFactor >= 105 ? "rgba(56,189,248,0.1)" : "var(--surface-2, #F5F7FB)",
+              border: `1px solid ${pick.parkFactor >= 105 ? "rgba(56,189,248,0.4)" : "var(--border, #D8DEED)"}`,
+              borderRadius: 6, padding: "4px 9px", cursor: "help",
+            }}
+          >
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "var(--text-muted, #8494B2)", textTransform: "uppercase" }}>PF</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: pick.parkFactor >= 105 ? "#38bdf8" : "var(--text-secondary, #445068)" }}>
+              {pick.parkFactor}
+            </span>
+          </div>
+        )}
+
+        {/* Lineup position */}
+        <div
+          title={`Batting order position${pick.lineupConfirmed ? " (confirmed)" : " (estimated)"} — top 4 earns max PA probability`}
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            background: pick.lineupPos != null && pick.lineupPos <= 4 ? "rgba(34,197,94,0.08)" : "var(--surface-2, #F5F7FB)",
+            border: `1px solid ${pick.lineupPos != null && pick.lineupPos <= 4 ? "rgba(34,197,94,0.3)" : "var(--border, #D8DEED)"}`,
+            borderRadius: 6, padding: "4px 9px", cursor: "help",
+          }}
+        >
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "var(--text-muted, #8494B2)", textTransform: "uppercase" }}>BAT</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: pick.lineupPos != null && pick.lineupPos <= 4 ? "#22c55e" : "var(--text-secondary, #445068)" }}>
+            {pick.lineupPos ? `#${pick.lineupPos}${pick.lineupConfirmed ? "✓" : "~"}` : "~"}
+          </span>
+        </div>
+      </div>
 
       {/* Expanded stats row */}
       {expanded && (
@@ -318,18 +404,21 @@ function PlayerCard({ pick, rank, onOpen }) {
           marginTop: 14,
           paddingTop: 12,
           borderTop: "1px solid var(--border, #D8DEED)",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
-          gap: 8,
         }}>
+          {/* Factor pills in expanded view */}
+          {pick.factors?.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
+              {pick.factors.map(f => <FactorPill key={f} factorKey={f} />)}
+            </div>
+          )}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
+            gap: 8,
+          }}>
           {[
-            { label: "L7 AVG",   tip: "Batting average over last 7 games — highest weight in 56K score",      value: pick.l7pa  >= 3 ? (pick.l7hits  / pick.l7pa ).toFixed(3).replace("0.", ".") : "—" },
             { label: "L14 AVG",  tip: "Batting average over last 14 games",                                    value: pick.l14pa >= 3 ? (pick.l14hits / pick.l14pa).toFixed(3).replace("0.", ".") : "—" },
             { label: "L30 AVG",  tip: "Batting average over last 30 games — season baseline anchor",           value: pick.l30pa >= 3 ? (pick.l30hits / pick.l30pa).toFixed(3).replace("0.", ".") : "—" },
-            { label: "STREAK",   tip: "Consecutive games with at least 1 hit — 5+ triggers Hot Streak bonus",  value: pick.activeStreak >= 1 ? `${pick.activeStreak}G` : "—" },
-            { label: "LINEUP",   tip: "Confirmed batting order position — top of order earns max PA probability", value: pick.lineupPos ? `#${pick.lineupPos}${pick.lineupConfirmed ? " ✓" : " ~"}` : "~" },
-            { label: "PARK",     tip: "Park factor — 100 is neutral, 110+ is hitter-friendly, <90 is pitcher's park", value: pick.parkFactor != null ? pick.parkFactor : "—" },
-            { label: "OPP K%",   tip: "Opposing pitcher's strikeout rate — lower K% means more balls in play (better for hitters)", value: pick.pitcherKPct != null ? `${(pick.pitcherKPct*100).toFixed(0)}%` : "—" },
             { label: "PITCHER",  tip: "Today's opposing starting pitcher",                                      value: pick.pitcherName ?? "—", wide: true },
           ].map(s => (
             <div key={s.label} title={s.tip} data-tooltip={s.tip} style={{ gridColumn: s.wide ? "span 2" : "span 1", cursor: "help" }}>
@@ -352,6 +441,7 @@ function PlayerCard({ pick, rank, onOpen }) {
               Full Player Card
             </button>
           </div>
+        </div>
         </div>
       )}
 
@@ -393,20 +483,32 @@ function SkeletonCard() {
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
-export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
-  const [picks, setPicks]           = useState([]);
-  const [status, setStatus]         = useState("idle"); // idle | loading | done | error
+export default function FiftySixBreaker({ mode, isPremium, onUpgrade }) {
+  const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local time
+  const [picks, setPicks]           = useState(() => _56bCache[todayStr]?.picks || []);
+  const [status, setStatus]         = useState(() => _56bCache[todayStr]?.picks?.length ? "done" : "idle");
   const [progress, setProgress]     = useState({ scored: 0, total: 0 });
   const [errorMsg, setErrorMsg]     = useState("");
   const [filterTier, setFilterTier] = useState("all");
   const [panelPick, setPanelPick]   = useState(null); // PlayerPanel target
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
-  });
+  const [selectedDate, setSelectedDate] = useState(todayStr);
   const abortRef = useRef(false);
 
-  // ─── Open PlayerPanel — shape 56K pick into the format PlayerPanel expects ──
+  // ─── Auto-run when date changes (mirrors TodaysPicks) ──────────────────────
+  useEffect(() => {
+    const cached = _56bCache[selectedDate];
+    if (cached) {
+      setPicks(cached.picks);
+      setStatus("done");
+      // Re-run if cache is older than 5 min for today
+      if (selectedDate === todayStr && cached.ts && Date.now() - cached.ts < 5 * 60_000) return;
+      if (selectedDate !== todayStr) return; // historical — don't auto-refresh
+    }
+    runAnalysis();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
+
+  // ─── Open PlayerPanel — shape 56B pick into the format PlayerPanel expects ──
   const openPanel = useCallback((pick) => {
     const batterId = parseInt(pick.id?.split("-")[0], 10);
     setPanelPick({
@@ -415,7 +517,7 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
         ? { id: pick.pitcherId, name: pick.pitcherName ?? "Unknown", hand: "R" }
         : null,
       game: { gamePk: pick.gamePk, venue: pick.venue },
-      scoreData: null, // 56K uses its own confidence score, not IQ scoreData
+      scoreData: null, // 56B uses its own confidence score, not IQ scoreData
     });
   }, []);
 
@@ -423,13 +525,13 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
   const runAnalysis = useCallback(async () => {
     abortRef.current = false;
     setStatus("loading");
-    setPicks([]);
+    if (!_56bCache[selectedDate]) setPicks([]);
     setProgress({ scored: 0, total: 0 });
     setErrorMsg("");
 
     try {
       const { games } = await fetchGames(selectedDate);
-      console.log("[56K] Games found:", games?.length ?? 0, games?.map(g => g.gamePk));
+      console.log("[56B] Games found:", games?.length ?? 0, games?.map(g => g.gamePk));
 
       // FIX: was setStatus("done") with no message — now surfaces a clear error
       if (!games?.length) {
@@ -537,7 +639,7 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
         }
       }
 
-      console.log("[56K] Total candidates:", candidates.length);
+      console.log("[56B] Total candidates:", candidates.length);
       setProgress({ scored: 0, total: candidates.length });
 
       const BATCH   = 12;
@@ -602,7 +704,7 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
               pitcherKPct  = pStats?.kPct ?? null;
             }
 
-            const { confidence, tier, factors } = compute56KillerScore({
+            const { confidence, tier, factors } = compute56BreakerScore({
               lineupPos,
               l7hits: s7.hits,   l7pa: s7.pa,
               l14hits: s14.hits, l14pa: s14.pa,
@@ -665,12 +767,14 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, 10);
 
-      console.log("[56K] Final results:", final.length, "above threshold", CONF_THRESHOLD);
+      console.log("[56B] Final results:", final.length, "above threshold", CONF_THRESHOLD);
       setPicks(final);
+      // ── Write to module-level cache so navigating away and back restores results ──
+      _56bCache[selectedDate] = { picks: final, ts: Date.now() };
       setStatus("done");
 
     } catch (err) {
-      console.error("[56Killer]", err);
+      console.error("[56Breaker]", err);
       setErrorMsg(err.message ?? "Unknown error. Check console for details.");
       setStatus("error");
     }
@@ -705,7 +809,7 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
             background: "linear-gradient(135deg, #f59e0b, #d97706)",
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
           }}>
-            56 Killer
+            56 Breaker
           </span>
           <span style={{
             fontSize: 10, fontWeight: 800, letterSpacing: "0.12em",
@@ -865,7 +969,7 @@ export default function FiftySixKiller({ mode, isPremium, onUpgrade }) {
               Ready to run
             </div>
             <div style={{ fontSize: 13, color: "var(--text-muted, #8494B2)" }}>
-              Select a date and tap <strong style={{ color: "#d97706" }}>Run Analysis</strong> to surface today's top plays.
+              Analysis runs automatically for today. Select a different date to re-run.
             </div>
           </div>
         )}
